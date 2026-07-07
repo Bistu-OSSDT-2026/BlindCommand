@@ -118,17 +118,14 @@ class EventBus:
         self._emitting = True
 
         for handler in handlers:
-            try:
-                if payload is None:
-                    handler()
-                else:
+                try:
                     handler(payload)
-            except Exception:
-                logger.exception(
-                    "EventBus: 回调 %s 在处理事件 %s 时抛出异常",
-                    getattr(handler, "__name__", str(handler)),
-                    event_type.name,
-                )
+                except Exception:
+                    logger.exception(
+                        "EventBus: 回调 %s 在处理事件 %s 时抛出异常",
+                        getattr(handler, "__name__", str(handler)),
+                        event_type.name,
+                    )
 
         self._emitting = False
 
