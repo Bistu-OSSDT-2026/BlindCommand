@@ -226,10 +226,12 @@ class UnitManager:
             current_turn: 当前回合数
         """
         if not unit.is_alive:
-            return  # 已阵亡，避免重复广播
-
-        # 标记阵亡并确保 HP 为 0
-        unit.take_damage(unit.current_hp, killer)
+            # 单位可能已被 battle_system 的 take_damage 杀死——仍需广播事件。
+            # 但不再重复调用 take_damage（避免 HP 已为 0 时再扣）。
+            pass
+        else:
+            # 标记阵亡并确保 HP 为 0
+            unit.take_damage(unit.current_hp, killer)
 
         # 从地图移除
         self._map.remove_unit(unit)
