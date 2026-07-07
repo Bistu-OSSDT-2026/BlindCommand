@@ -12,6 +12,8 @@ from typing import Optional
 
 import pygame
 
+from typing import TYPE_CHECKING
+
 from src.core.constants import (
     COLOR_ENEMY,
     COLOR_FRIENDLY,
@@ -21,6 +23,9 @@ from src.core.constants import (
     Coordinate,
     TerrainType,
 )
+
+if TYPE_CHECKING:
+    from src.core.interfaces import IFogOfWar, IMap
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +91,8 @@ class MapWidget:
         self._map_height: int = 0
         self._units: list[dict] = []          # Sprint 1: 从 JSON 加载的单位列表
         self._tile_size: int = TILE_SIZE
+        self._map_data: "IMap | None" = None  # Sprint 2: #2 提供的 IMap 实例
+        self._fog: "IFogOfWar | None" = None  # Sprint 2: #2 提供的 IFogOfWar 实例
 
         # 地图画布
         self._map_surface: Optional[pygame.Surface] = None
@@ -114,6 +121,24 @@ class MapWidget:
         return self._map_height * self._tile_size
 
     # ── 公开方法 ────────────────────────────────────────────────────
+
+    def set_map(self, map_data: "IMap") -> None:
+        """绑定地图数据源（Sprint 2 对接 #2 的 IMap 实现）。
+
+        Sprint 1 使用 load_map_from_json() 作为替代数据源。
+
+        Args:
+            map_data: #2 提供的 IMap 接口实例
+        """
+        self._map_data = map_data
+
+    def set_fog(self, fog: "IFogOfWar") -> None:
+        """绑定迷雾查询接口（Sprint 2 对接 #2 的 IFogOfWar 实现）。
+
+        Args:
+            fog: #2 提供的 IFogOfWar 接口实例
+        """
+        self._fog = fog
 
     def load_map_from_json(self, filepath: str = DEFAULT_MAP_FILE) -> bool:
         """从 JSON 文件加载地图数据。
