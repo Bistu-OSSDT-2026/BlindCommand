@@ -93,6 +93,7 @@ class UnitBase(IUnit):
         self._is_alive = True
 
         self._game_map = game_map
+        self._terrain_defense_bonus: int = 0  # 显式地形加成（#3 BattleSystem 设置）
 
     # ── 只读属性 ──────────────────────────────────────────────────────
 
@@ -131,13 +132,15 @@ class UnitBase(IUnit):
 
     @property
     def defense(self) -> int:
-        """最终防御力 = 基础防御 + 当前所在地形防御加成。
+        """最终防御力 = 基础防御 + 地形防御加成。
 
-        地形加成由 #2 计算（本层），#3 读此属性即可获得含地形防御。
-        无 Map 引用时（测试模式）返回裸基础防御。
+        地形加成来源（按优先级）：
+        1. 若 #3 通过 terrain_defense_bonus setter 显式设置，使用该值
+        2. 否则，若有 Map 引用，从地图查询当前格子的防御加成
+        3. 否则（测试模式），返回裸基础防御
         """
-        if self._game_map is None:
-            return self._base_defense
+        if self._terrain_defense_bonus != 0 or self._game_map is None:
+            return self._base_defense + self._terrain_defense_bonus
         bonus = self._game_map.get_defense_bonus(self._position)
         return self._base_defense + bonus
 
@@ -160,6 +163,25 @@ class UnitBase(IUnit):
     @property
     def is_hq(self) -> bool:
         return self._is_hq
+
+    @property
+    def hp_ratio(self) -> float:
+        """当前血量比例 (0.0 ~ 1.0)。"""
+        return self._current_hp / self._max_hp if self._max_hp > 0 else 0.0
+
+    @property
+    def terrain_defense_bonus(self) -> int:
+        """显式地形防御加成（由 #3 BattleSystem 在结算前设置）。"""
+        return self._terrain_defense_bonus
+
+    @terrain_defense_bonus.setter
+    def terrain_defense_bonus(self, value: int) -> None:
+        """设置地形防御加成。
+
+        #3 BattleSystem 在 resolve_battle 前调用此 setter，
+        将 IMap.get_defense_bonus() 的结果缓存到单位上。
+        """
+        self._terrain_defense_bonus = value
 
     # ── 操作方法 ──────────────────────────────────────────────────────
 
