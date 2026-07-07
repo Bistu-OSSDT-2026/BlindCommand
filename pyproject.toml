@@ -1,0 +1,124 @@
+[project]
+name = "BlindCommand"
+version = "0.1.0"
+description = "盲棋指挥 — 以信息不对称为核心的即时战术指挥游戏"
+readme = "README"
+license = { text = "MIT" }
+requires-python = ">=3.11,<3.12"
+authors = [
+    { name = "Bistu-OSSDT-2026 Team-29" },
+]
+keywords = ["game", "strategy", "fog-of-war", "tactical"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Games/Entertainment :: Real Time Strategy",
+]
+
+dependencies = [
+    "pygame-ce>=2.5,<3.0",
+    "pygame-gui>=0.6.10,<0.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black>=24,<25",
+    "isort>=5,<6",
+    "mypy>=1.10,<2",
+    "ruff>=0.5,<1",
+    "pytest>=8,<9",
+    "pyinstaller>=6,<7",
+    "pre-commit>=3,<4",
+]
+
+[project.scripts]
+blindcommand = "src.main:main"
+
+# ============================================================================
+# 工具配置（以下配置对所有开发人员生效）
+# ============================================================================
+
+[tool.black]
+line-length          = 100
+target-version       = ["py311"]
+include              = '\\.pyi?$'
+extend-exclude       = '''
+/(
+    \.eggs
+  | \.git
+  | \.venv
+  | __pycache__
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile              = "black"
+line_length          = 100
+py_version           = 311
+src_paths            = ["src", "tests"]
+known_first_party    = ["src"]
+sections             = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
+
+[tool.mypy]
+python_version       = "3.11"
+strict               = true
+warn_unused_configs  = true
+warn_redundant_casts = true
+warn_unused_ignores  = true
+disallow_untyped_defs = true
+check_untyped_defs   = true
+show_error_codes     = true
+
+# 第三方库类型存根（如未安装则忽略）
+[[tool.mypy.overrides]]
+module = [
+    "pygame.*",
+    "pygame_gui.*",
+]
+ignore_missing_imports = true
+
+[tool.ruff]
+line-length          = 100
+target-version       = "py311"
+src                  = ["src", "tests"]
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # isort
+    "N",   # pep8-naming
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+]
+ignore = [
+    "E501", # 行长度由 black 处理
+]
+
+[tool.pytest.ini_options]
+testpaths            = ["tests"]
+python_files         = "test_*.py"
+python_classes        = "Test*"
+python_functions      = "test_*"
+addopts              = "-v --tb=short --strict-markers"
+
+[tool.pyinstaller]
+# 一键打包配置（#5 维护）
+onefile              = true
+windowed             = true
+name                 = "BlindCommand"
+add_data             = [
+    "src/ui/assets:src/ui/assets",
+    "data:data",
+]

@@ -1,0 +1,104 @@
+{
+    "_comment": "BlindCommand 测试地图 #01 — 20×15 对称战场",
+    "_version": "1.0",
+    "_terrain_legend": {
+        "0": "平原 (Plain)",
+        "1": "森林 (Forest)",
+        "2": "山地 (Mountain)",
+        "3": "河流 (River)",
+        "4": "指挥所 (HQ)",
+        "5": "桥梁 (Bridge)"
+    },
+
+    "map_size": {
+        "width": 20,
+        "height": 15
+    },
+
+    "terrain": [
+        [2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2],
+        [2, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 4, 1, 2],
+        [2, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 2],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 3, 3, 3, 5, 5, 3, 3, 3, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [2, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 2],
+        [2, 1, 4, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 2],
+        [2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2]
+    ],
+
+    "friendly_hq": { "x": 2, "y": 13 },
+    "enemy_hq":    { "x": 17, "y": 1 },
+
+    "friendly_units": [
+        {
+            "unit_id": "friendly_infantry_01",
+            "name": "第一步兵连",
+            "unit_type": "Infantry",
+            "start_x": 4, "start_y": 13
+        },
+        {
+            "unit_id": "friendly_infantry_02",
+            "name": "第二步兵连",
+            "unit_type": "Infantry",
+            "start_x": 3, "start_y": 12
+        },
+        {
+            "unit_id": "friendly_cavalry_01",
+            "name": "第一骑兵连",
+            "unit_type": "Cavalry",
+            "start_x": 6, "start_y": 12
+        },
+        {
+            "unit_id": "friendly_artillery_01",
+            "name": "第一炮兵连",
+            "unit_type": "Artillery",
+            "start_x": 2, "start_y": 11
+        },
+        {
+            "unit_id": "friendly_scout_01",
+            "name": "侦察排",
+            "unit_type": "Scout",
+            "start_x": 8, "start_y": 13
+        }
+    ],
+
+    "enemy_units": [
+        {
+            "unit_id": "enemy_infantry_01",
+            "name": "敌军步兵A",
+            "unit_type": "Infantry",
+            "start_x": 15, "start_y": 1
+        },
+        {
+            "unit_id": "enemy_infantry_02",
+            "name": "敌军步兵B",
+            "unit_type": "Infantry",
+            "start_x": 16, "start_y": 2
+        },
+        {
+            "unit_id": "enemy_cavalry_01",
+            "name": "敌军骑兵A",
+            "unit_type": "Cavalry",
+            "start_x": 13, "start_y": 2
+        },
+        {
+            "unit_id": "enemy_artillery_01",
+            "name": "敌军炮兵A",
+            "unit_type": "Artillery",
+            "start_x": 17, "start_y": 3
+        },
+        {
+            "unit_id": "enemy_scout_01",
+            "name": "敌军侦察兵",
+            "unit_type": "Scout",
+            "start_x": 11, "start_y": 1
+        }
+    ]
+}

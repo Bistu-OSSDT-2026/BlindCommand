@@ -1,0 +1,6 @@
+# BlindCommand 依赖
+# 安装：pip install -r requirements.txt
+# 开发依赖：pip install -r requirements-dev.txt
+
+pygame-ce>=2.5,<3.0
+pygame-gui>=0.6.10,<0.7

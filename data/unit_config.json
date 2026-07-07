@@ -1,0 +1,61 @@
+{
+    "_comment": "BlindCommand 兵种数值配置 — 与 src/core/constants.py 中的 UNIT_STATS 保持同步",
+    "_version": "1.0",
+    "unit_types": {
+        "Infantry": {
+            "max_hp": 10,
+            "attack": 3,
+            "defense": 2,
+            "speed": 3,
+            "attack_range": 1,
+            "vision_range": 3,
+            "strong_against": ["Cavalry"],
+            "is_hq": false,
+            "capture_turns": 0
+        },
+        "Cavalry": {
+            "max_hp": 8,
+            "attack": 4,
+            "defense": 1,
+            "speed": 6,
+            "attack_range": 1,
+            "vision_range": 4,
+            "strong_against": ["Artillery"],
+            "is_hq": false,
+            "capture_turns": 0
+        },
+        "Artillery": {
+            "max_hp": 6,
+            "attack": 5,
+            "defense": 1,
+            "speed": 1,
+            "attack_range": 3,
+            "vision_range": 2,
+            "strong_against": ["Infantry"],
+            "is_hq": false,
+            "capture_turns": 0
+        },
+        "Scout": {
+            "max_hp": 5,
+            "attack": 1,
+            "defense": 1,
+            "speed": 5,
+            "attack_range": 1,
+            "vision_range": 6,
+            "strong_against": [],
+            "is_hq": false,
+            "capture_turns": 0
+        },
+        "HQ": {
+            "max_hp": 30,
+            "attack": 0,
+            "defense": 3,
+            "speed": 0,
+            "attack_range": 0,
+            "vision_range": 0,
+            "strong_against": [],
+            "is_hq": true,
+            "capture_turns": 2
+        }
+    }
+}
