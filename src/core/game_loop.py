@@ -1,0 +1,322 @@
+"""
+BlindCommand 游戏主循环 — IGameLoop + IGameState 的具体实现
+===============================================================
+本模块提供 `GameLoop` 类：组装地图、单位、范围检索、迷雾；
+驱动 8 阶段回合时序（DESIGN.md §6.1）；维护回合数与游戏结果；
+提供只读状态查询（IGameState）供 #3 指令执行。
+
+关键设计（CORE_SPEC.md §8）：
+- #3 拥有的阶段（指令处理、战斗结算、AI 决策）通过构造注入的可调用钩子接入
+- #2 不 import src/battle/，不 import src/ui/
+- start() 为阻塞式循环（CP-1 命令行用）；GUI 模式下 #4 逐回合调用 run_turn()
+- 胜负判定：全歼 / 回合上限 + 订阅 HQ_CAPTURED 事件
+
+版本：v0.1.0（对齐 CORE_SPEC.md §8）
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Callable, Optional
+
+from src.core.constants import (
+    Faction,
+    GameEventType,
+    GameOverPayload,
+    GameResult,
+    HqCapturedPayload,
+    MAX_TURNS,
+    PositionReportPayload,
+)
+from src.core.event_bus import event_bus
+from src.core.fog_of_war import FogOfWar
+from src.core.interfaces import (
+    ICommander,
+    ICommand,
+    IGameLoop,
+    IGameState,
+    IMap,
+    IRangeQuery,
+    IUnit,
+)
+from src.core.range_utils import RangeQuery
+
+logger = logging.getLogger(__name__)
+
+
+class GameLoop(IGameLoop, IGameState):
+    """游戏主循环与只读状态查询。
+
+    组装 Map、FogOfWar、RangeQuery 和单位注册表，驱动 8 阶段回合。
+    #3 通过构造注入钩子接入指令处理、AI、战斗阶段。
+    """
+
+    # ── __init__ ───────────────────────────────────────────────────────
+
+    def __init__(
+        self,
+        game_map: IMap,
+        units: list[IUnit],
+        commander: ICommander | None = None,
+        combat_resolver: Callable[[IGameState], None] | None = None,
+        ai_decider: Callable[[IGameState], None] | None = None,
+    ) -> None:
+        """构造主循环。
+
+        Args:
+            game_map: 地图实例
+            units: 初始单位列表（双方全部）
+            commander: #3 指令管理系统（可空，CP-1 前无）
+            combat_resolver: #3 战斗结算钩子，签名 (IGameState) -> None
+            ai_decider: #3 AI 决策钩子，签名 (IGameState) -> None
+
+        Raises:
+            ValueError: 若 units 中有重复 unit_id
+        """
+        self._map = game_map
+        self._commander = commander
+        self._combat_resolver = combat_resolver
+        self._ai_decider = ai_decider
+
+        # 单位注册表
+        self._units: dict[str, IUnit] = {}
+        for u in units:
+            if u.unit_id in self._units:
+                raise ValueError(f"重复的 unit_id: {u.unit_id}")
+            self._units[u.unit_id] = u
+
+        # 子模块
+        self._range_query: IRangeQuery = RangeQuery(game_map, self._live_units)
+        self._fog = FogOfWar(game_map, self._live_units)
+
+        # 回合与状态
+        self._current_turn: int = 0
+        self._result: Optional[GameResult] = None
+        self._paused: bool = False
+        self._running: bool = False
+
+        # 初始化友军汇报调度
+        for u in units:
+            if u.faction == Faction.FRIENDLY:
+                self._fog.init_report_schedule(u, self._current_turn)
+
+        # 订阅 HQ 占领事件（#3 广播）
+        event_bus.subscribe(GameEventType.HQ_CAPTURED, self._on_hq_captured)
+
+    # ── IGameLoop：回合驱动 ───────────────────────────────────────────
+
+    def start(self) -> None:
+        """启动阻塞式回合循环（CP-1 命令行用）。GUI 模式下 #4 应调用 run_turn()。"""
+        self._running = True
+        self._paused = False
+        while self._running and self._result is None:
+            if self._paused:
+                break
+            self.run_turn()
+
+    def pause(self) -> None:
+        self._paused = True
+
+    def resume(self) -> None:
+        self._paused = False
+
+    def run_turn(self) -> Optional[GameResult]:
+        """执行一回合的 8 阶段逻辑（如已完成则直接返回结果）。
+
+        Returns:
+            GameResult 若本回合触发游戏结束；否则 None
+        """
+        if self._result is not None:
+            return self._result
+
+        self._current_turn += 1
+
+        # ── 阶段 0：回合开始 ─────────────────────────────────────
+        event_bus.emit(GameEventType.TURN_START, None)
+
+        # ── 阶段 1：指令出队（#3）─────────────────────────────────
+        if self._commander is not None:
+            due_cmds: list[ICommand] = self._commander.process_command_queue(
+                self._current_turn
+            )
+            # 注：COMMAND_ARRIVED 事件的 payload 构造由 #3 负责
+            # 此处仅调用 process，事件由 #3 在其内部 emit
+
+        # ── 阶段 2：AI 决策（#3）───────────────────────────────────
+        if self._ai_decider is not None:
+            try:
+                self._ai_decider(self)
+            except Exception:
+                logger.exception("AI 决策阶段异常（不中断主循环）")
+
+        # ── 阶段 3：移动结算 ─────────────────────────────────────
+        # 本层负责清除已阵亡单位的占用（由后面的 cleanup 统一处理）
+
+        # ── 阶段 4：侦察 / 敌情检测 ──────────────────────────────
+        self._detect_enemy_spotted()
+
+        # ── 阶段 5：战斗结算（#3）─────────────────────────────────
+        if self._combat_resolver is not None:
+            try:
+                self._combat_resolver(self)
+            except Exception:
+                logger.exception("战斗结算阶段异常（不中断主循环）")
+
+        # ── 阶段 6：清理阵亡单位 ─────────────────────────────────
+        self._cleanup_dead_units()
+
+        # ── 阶段 7：友军位置汇报 ─────────────────────────────────
+        self._report_friendly_positions()
+
+        # ── 阶段 8：胜负判定 ─────────────────────────────────────
+        self._result = self.check_victory_conditions()
+        if self._result is not None:
+            event_bus.emit(GameEventType.GAME_OVER, GameOverPayload(
+                turn=self._current_turn,
+                result=self._result.value,
+                reason=self._result_reason(self._result),
+            ))
+
+        event_bus.emit(GameEventType.TURN_END, None)
+        return self._result
+
+    # ── IGameLoop：查询 ────────────────────────────────────────────────
+
+    def get_current_turn(self) -> int:
+        return self._current_turn
+
+    def get_all_units(self, faction: Optional[Faction] = None) -> list[IUnit]:
+        if faction is None:
+            return [u for u in self._units.values() if u.is_alive]
+        return [u for u in self._units.values()
+                if u.is_alive and u.faction == faction]
+
+    def get_game_result(self) -> Optional[GameResult]:
+        return self._result
+
+    def check_victory_conditions(self) -> Optional[GameResult]:
+        """检查胜负条件（全歼 / 回合上限）。
+
+        HQ 占领胜负由 HQ_CAPTURED 事件触发 _on_hq_captured 置位，
+        本方法不在内部重复判定占领状态。
+        """
+        if self._result is not None:
+            return self._result
+
+        friendly = [u for u in self._units.values()
+                     if u.faction == Faction.FRIENDLY and u.is_alive]
+        enemy = [u for u in self._units.values()
+                  if u.faction == Faction.ENEMY and u.is_alive]
+
+        if not friendly:
+            return GameResult.DEFEAT
+        if not enemy:
+            return GameResult.VICTORY
+        if self._current_turn >= MAX_TURNS:
+            return GameResult.DRAW
+
+        return None
+
+    # ── IGameState：只读查询 ───────────────────────────────────────────
+
+    def get_unit_by_id(self, unit_id: str) -> Optional[IUnit]:
+        return self._units.get(unit_id)
+
+    def get_map(self) -> IMap:
+        return self._map
+
+    def get_range_query(self) -> IRangeQuery:
+        return self._range_query
+
+    # 注：get_current_turn 已在 IGameLoop 部分实现（复用）
+
+    # ── 内部：单位生命周期 ────────────────────────────────────────────
+
+    def _live_units(self) -> list[IUnit]:
+        """返回所有存活单位（供 RangeQuery / FogOfWar 的 units_provider）。"""
+        return [u for u in self._units.values() if u.is_alive]
+
+    def _cleanup_dead_units(self) -> None:
+        """移除地图上已阵亡单位的占用，取消其指令队列。"""
+        for u in list(self._units.values()):
+            if not u.is_alive:
+                self._map.remove_unit(u)
+                if self._commander is not None:
+                    self._commander.cancel_all_commands(u.unit_id)
+
+    # ── 内部：阶段 4 敌情检测 ─────────────────────────────────────────
+
+    def _detect_enemy_spotted(self) -> None:
+        """遍历友军，若视野内出现敌人则广播 ENEMY_SPOTTED。
+
+        简化实现：不维护「已发现集合」，每回合均可能重复广播。
+        CP-2 可升级为仅首次发现。
+        """
+        for u in self._live_units():
+            if u.faction != Faction.FRIENDLY:
+                continue
+            enemy = self._range_query.find_nearest_enemy(u)
+            if enemy is not None:
+                from src.core.constants import EnemySpottedPayload
+                event_bus.emit(GameEventType.ENEMY_SPOTTED, EnemySpottedPayload(
+                    turn=self._current_turn,
+                    reporter_id=u.unit_id,
+                    reporter_name=u.name,
+                    enemy_type=enemy.unit_type.value,
+                    enemy_count=1,
+                    location=enemy.position.to_tuple(),
+                ))
+
+    # ── 内部：阶段 7 位置汇报 ─────────────────────────────────────────
+
+    def _report_friendly_positions(self) -> None:
+        """对每个应汇报的友军，生成 PositionReportPayload 并广播，然后推进调度。"""
+        for u in self._live_units():
+            if u.faction != Faction.FRIENDLY:
+                continue
+            if not self._fog.should_report_position(u, self._current_turn):
+                continue
+
+            approx = self._fog.get_approximate_position(u)
+            has_enemy = self._range_query.has_enemy_in_range(u, u.vision_range)
+
+            # 敌军简述（精简版，CP-2 可扩展）
+            enemy_info = ""
+            if has_enemy:
+                nearest = self._range_query.find_nearest_enemy(u)
+                if nearest is not None:
+                    enemy_info = f"发现{nearest.unit_type.value}×1"
+
+            event_bus.emit(GameEventType.POSITION_REPORT, PositionReportPayload(
+                turn=self._current_turn,
+                unit_id=u.unit_id,
+                unit_name=u.name,
+                reported_x=approx.x,
+                reported_y=approx.y,
+                has_enemy_nearby=has_enemy,
+                enemy_info=enemy_info,
+            ))
+            self._fog.on_position_reported(u, self._current_turn)
+
+    # ── 内部：HQ 占领胜负 ─────────────────────────────────────────────
+
+    def _on_hq_captured(self, payload: HqCapturedPayload) -> None:
+        """HQ_CAPTURED 事件回调：立即设置游戏结果。"""
+        if self._result is not None:
+            return  # 已结束，忽略重复
+        if payload.capturer_faction == Faction.FRIENDLY.value:
+            self._result = GameResult.VICTORY
+        else:
+            self._result = GameResult.DEFEAT
+
+    # ── 内部：结果文本 ────────────────────────────────────────────────
+
+    @staticmethod
+    def _result_reason(result: GameResult) -> str:
+        """返回结局的人类可读原因。"""
+        reasons = {
+            GameResult.VICTORY: "全歼敌军",
+            GameResult.DEFEAT: "全军覆没",
+            GameResult.DRAW: f"达到回合上限（{MAX_TURNS} 回合）",
+        }
+        return reasons.get(result, str(result))
