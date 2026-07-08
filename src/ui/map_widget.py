@@ -26,11 +26,21 @@ from __future__ import annotations
 import json
 import logging
 import math
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 import pygame
+
+# ── PyInstaller onefile 路径解析 ──────────────────────────────────────
+
+
+def _get_base_path() -> Path:
+    """返回项目根目录路径（兼容 PyInstaller onefile 模式）。"""
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS)
+    return Path(__file__).resolve().parent.parent.parent
 
 from src.core.constants import (
     ASSETS_DIR,
@@ -244,16 +254,13 @@ class MapWidget:
     def load_map_from_json(self, filepath: str = DEFAULT_MAP_FILE) -> bool:
         """从 JSON 文件加载地图数据。
 
-        在 #2 的 IMap 实现就绪之前，此方法直接读取 JSON 作为数据源。
-        Sprint 2 仍保留此方法作为独立运行模式的后备。
-
         Args:
             filepath: 地图 JSON 文件路径
 
         Returns:
             True 如果加载成功
         """
-        path = Path(filepath)
+        path = _get_base_path() / filepath
         if not path.exists():
             logger.error("地图文件不存在: %s", path)
             return False
@@ -480,7 +487,7 @@ class MapWidget:
 
     def _load_tile_images(self) -> None:
         """预加载地形图片到缓存。素材缺失时缓存 None（运行时降级纯色）。"""
-        assets_path = Path(ASSETS_DIR) / "terrain"
+        assets_path = _get_base_path() / ASSETS_DIR / "terrain"
         for terrain_type, filename in TERRAIN_IMAGE_FILES.items():
             filepath = assets_path / filename
             if filepath.exists():
