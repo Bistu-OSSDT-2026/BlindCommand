@@ -97,7 +97,6 @@ select = [
     "E",   # pycodestyle errors
     "F",   # pyflakes
     "W",   # pycodestyle warnings
-    "I",   # isort
     "N",   # pep8-naming
     "B",   # flake8-bugbear
     "SIM", # flake8-simplify
@@ -105,6 +104,9 @@ select = [
 ignore = [
     "E501", # 行长度由 black 处理
 ]
+
+# 注: 不启用 ruff 的 "I" (isort) 规则，import 排序由 standalone isort 处理
+# 两者在特定场景下存在已知排序冲突
 
 [tool.pytest.ini_options]
 testpaths            = ["tests"]

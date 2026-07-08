@@ -94,6 +94,7 @@ class UnitBase(IUnit):
 
         self._game_map = game_map
         self._terrain_defense_bonus: int = 0  # 显式地形加成（#3 BattleSystem 设置）
+        self._terrain_defense_explicitly_set: bool = False
 
     # ── 只读属性 ──────────────────────────────────────────────────────
 
@@ -139,7 +140,7 @@ class UnitBase(IUnit):
         2. 否则，若有 Map 引用，从地图查询当前格子的防御加成
         3. 否则（测试模式），返回裸基础防御
         """
-        if self._terrain_defense_bonus != 0 or self._game_map is None:
+        if self._terrain_defense_explicitly_set or self._game_map is None:
             return self._base_defense + self._terrain_defense_bonus
         bonus = self._game_map.get_defense_bonus(self._position)
         return self._base_defense + bonus
@@ -182,6 +183,7 @@ class UnitBase(IUnit):
         将 IMap.get_defense_bonus() 的结果缓存到单位上。
         """
         self._terrain_defense_bonus = value
+        self._terrain_defense_explicitly_set = True
 
     # ── 操作方法 ──────────────────────────────────────────────────────
 
@@ -205,7 +207,7 @@ class UnitBase(IUnit):
         if not self._is_alive:
             return 0
         if amount < 0:
-            raise ValueError(f"伤害值不能为负，收到 {amount}（来源: {source.unit_id}）")
+            raise ValueError(f"伤害值不能为负，收到 {amount}（来源: {getattr(source, 'unit_id', 'unknown')}）")
 
         applied = min(amount, self._current_hp)
         self._current_hp -= applied
@@ -233,6 +235,12 @@ class UnitBase(IUnit):
 
         # 无 Map 模式（测试/自测）：直接跳跃
         if self._game_map is None:
+            if target.x < 0 or target.y < 0:
+                logger.warning(
+                    "move_to: 单位 %s 在测试模式下移动到无效坐标 %s（负值），"
+                    "但仍允许移动",
+                    self._unit_id, target
+                )
             self._position = target
             return True
 
@@ -241,13 +249,14 @@ class UnitBase(IUnit):
         if self._position == target:
             return True
 
-        path = self._game_map.find_path(self._position, target, self._speed)
+        path = self._game_map.find_path(self._position, target, self._speed, self._faction)
         if not path or path[-1] != target:
             # 不可达 或 步数不够（全或无，不部分移动）
             return False
 
         if self._game_map.move_unit(self, self._position, target):
             self._position = target
+            self._terrain_defense_explicitly_set = False  # 移动后地形防御需重新查询
             return True
         return False
 
@@ -311,6 +320,6 @@ class UnitBase(IUnit):
         status = "存活" if self._is_alive else "阵亡"
         hp_pct = int(self._current_hp / self._max_hp * 100) if self._max_hp else 0
         return (
-            f"{self._name}（{UNIT_DISPLAY_NAMES[self._unit_type]}）"
+            f"{self._name}（{UNIT_DISPLAY_NAMES.get(self._unit_type, self._unit_type.value)}）"
             f" [{status}] HP {self._current_hp}/{self._max_hp} ({hp_pct}%)"
         )

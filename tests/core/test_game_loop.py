@@ -6,8 +6,6 @@ GameLoop 单元测试 — 对齐 CORE_SPEC.md §9.5
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
 import pytest
 
 from src.core.constants import (
@@ -20,12 +18,10 @@ from src.core.constants import (
     HqCapturedPayload,
     UnitType,
 )
-from src.core.event_bus import EventBus, event_bus
-from src.core.fog_of_war import FogOfWar
+from src.core.event_bus import event_bus
 from src.core.game_loop import GameLoop
 from src.core.map import GameMap
 from src.core.unit_base import UnitBase
-
 
 # ── 辅助 ──────────────────────────────────────────────────────────────
 

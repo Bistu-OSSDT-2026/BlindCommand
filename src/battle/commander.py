@@ -898,3 +898,7 @@ class _SimpleGameState(IGameState):
 
     def get_current_turn(self) -> int:
         return self._current_turn
+
+    def get_fog(self) -> "IFogOfWar | None":  # type: ignore[name-defined]
+        """_SimpleGameState 不持有 FogOfWar 实例，返回 None。"""
+        return None

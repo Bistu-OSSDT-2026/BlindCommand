@@ -17,9 +17,7 @@ from typing import Callable, Optional
 from src.core.constants import (
     CommandType,
     Coordinate,
-    Direction,
     Faction,
-    GameEventType,
     GameResult,
     TerrainType,
     UnitType,
@@ -130,11 +128,11 @@ class IUnit(ABC):
         """受到伤害。
 
         Args:
-            amount: 原始伤害值（计算克制/地形前的值由调用方处理）
+            amount: 最终伤害值（#3 已计算防御/克制/地形后的值）
             source: 伤害来源单位
 
         Returns:
-            实际造成的伤害值（扣除防御后）
+            实际扣血量 = min(amount, 扣血前 current_hp)
         """
         ...
 
@@ -252,7 +250,8 @@ class IMap(ABC):
 
     @abstractmethod
     def find_path(
-        self, start: Coordinate, end: Coordinate, max_steps: int
+        self, start: Coordinate, end: Coordinate, max_steps: int,
+        faction: Optional[Faction] = None,
     ) -> list[Coordinate]:
         """A* 寻路。
 
@@ -260,6 +259,7 @@ class IMap(ABC):
             start: 起点
             end: 终点
             max_steps: 最大步数（受单位 speed 限制）
+            faction: 可选，移动单位所属阵营（用于过滤敌军占据格，防止穿过敌方单位）
 
         Returns:
             路径坐标列表（含起点和终点），若不可达返回空列表
@@ -357,6 +357,27 @@ class IFogOfWar(ABC):
         """判断该友军单位本回合是否需要汇报位置。"""
         ...
 
+    @abstractmethod
+    def init_report_schedule(self, unit: IUnit, current_turn: int) -> None:
+        """初始化单位的汇报调度（单位创建/游戏开始时调用）。
+
+        仅对 FRIENDLY 阵营有效。安排首次汇报回合。
+        """
+        ...
+
+    @abstractmethod
+    def on_position_reported(self, unit: IUnit, current_turn: int) -> None:
+        """汇报完成后调用，安排下次汇报回合。
+
+        由 GameLoop 在实际 emit POSITION_REPORT 后调用。
+        """
+        ...
+
+    @abstractmethod
+    def remove_report_schedule(self, unit_id: str) -> None:
+        """移除单位的汇报调度条目（阵亡/注销时调用，幂等）。"""
+        ...
+
 
 # ============================================================================
 # 第五部分：游戏主循环接口（#2 实现）
@@ -446,7 +467,7 @@ class ICommander(ABC):
 
     @abstractmethod
     def issue_command(
-        self, unit_id: str, command_type: CommandType, params: dict
+        self, unit_id: str, command_type: CommandType, params: dict[str, object]
     ) -> bool:
         """向指定单位下达指令。指令进入传达队列，经历通信延迟后到达。
 
@@ -500,6 +521,11 @@ class IGameState(ABC):
     @abstractmethod
     def get_range_query(self) -> IRangeQuery:
         """获取范围检索工具。"""
+        ...
+
+    @abstractmethod
+    def get_fog(self) -> IFogOfWar:
+        """获取迷雾/视野管理器（供 #4 UI 查询可见性）。"""
         ...
 
     @abstractmethod

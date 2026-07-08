@@ -18,14 +18,12 @@
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from src.core.constants import (
     COMMAND_DELAY_MAX,
     COMMAND_DELAY_MIN,
     COMMAND_DELAY_WEIGHTS,
-    CommandType,
 )
 
 if TYPE_CHECKING:
