@@ -1,31 +1,53 @@
 """
-MainWindow — 游戏主窗口，组装所有 UI 子面板。
+MainWindow — 游戏主窗口，组装所有 UI 子面板（Sprint 2 升级版）。
 
 负责 pygame 初始化、布局计算、主循环（事件 / 更新 / 渲染）。
-依赖三个子面板：BattleLogPanel、MapWidget、CommandPanel。
+依赖四个子面板：BattleLogPanel、MapWidget、CommandPanel、MarkerSystem、FogRenderer。
+
+Sprint 2 新增：
+    - 依赖注入：IGameLoop / IMap / IFogOfWar / ICommander（均可选）
+    - 集成 MarkerSystem（拖拽标记）和 FogRenderer（迷雾遮罩）
+    - 渲染管线升级：地形 → 单位 → 标记 → 迷雾 → UI 控件
+    - 指令执行对接 ICommander（真实指令下达）
+    - BattleLogPanel 对接真实 EventBus 事件
+
+约束（UI_SPEC §1.2）：
+    C1: 禁止 import src.battle
+    C2: 禁止 import src.core 内部实现模块
+    C3: 禁止直接读写任何 Unit 实例属性
+    C4: 禁止直接修改地图数据
+    C5: 所有游戏状态变化只能通过 EventBus 获知
+
+版本: v0.2.0 — Sprint 2
 """
 
+from __future__ import annotations
+
 import logging
-import sys
-from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import pygame
 import pygame_gui
 
 from src.core.constants import (
-    BATTLE_LOG_BG_COLOR,
     BATTLE_LOG_WIDTH_RATIO,
-    COMMAND_PANEL_BG_COLOR,
     COMMAND_PANEL_HEIGHT,
     MAP_AREA_WIDTH_RATIO,
     WINDOW_HEIGHT,
     WINDOW_TITLE,
     WINDOW_WIDTH,
+    Faction,
+    GameEventType,
 )
+from src.core.event_bus import event_bus
 from src.ui.battle_log import BattleLogPanel
 from src.ui.command_panel import CommandPanel
+from src.ui.fog_renderer import FogRenderer
 from src.ui.map_widget import MapWidget
+from src.ui.marker import MarkerSystem
+
+if TYPE_CHECKING:
+    from src.core.interfaces import ICommander, IFogOfWar, IGameLoop, IMap
 
 logger = logging.getLogger(__name__)
 
@@ -39,16 +61,54 @@ COLOR_BORDER   = (60, 60, 60)    # 分隔线
 class MainWindow:
     """游戏主窗口。
 
-    组装三个子面板并运行主循环：
-    1. pygame 初始化 + pygame_gui UIManager
-    2. 创建 BattleLogPanel（左 28%）
-    3. 创建 MapWidget（中 72% 上）
-    4. 创建 CommandPanel（底部 80px）
-    5. 主循环：事件分发 → 更新 → 渲染
+    组装子面板并运行主循环：
+        1. pygame 初始化 + pygame_gui UIManager
+        2. 创建 BattleLogPanel（左 28%）
+        3. 创建 MapWidget（中 72% 上）
+        4. 创建 MarkerSystem（标记拖拽，Sprint 2）
+        5. 创建 FogRenderer（迷雾遮罩，Sprint 2）
+        6. 创建 CommandPanel（底部 80px）
+        7. 主循环：事件分发 → 更新 → 渲染
+
+    Sprint 2 支持两种运行模式：
+        - 独立模式（无注入）：加载 JSON 地图 + 模拟战报（Sprint 1 兼容）
+        - 集成模式（有注入）：对接 #2/3 接口 + 真实事件订阅
     """
 
-    def __init__(self) -> None:
-        """初始化窗口和所有子面板。"""
+    def __init__(
+        self,
+        game_loop: IGameLoop | None = None,
+        map_data: IMap | None = None,
+        fog: IFogOfWar | None = None,
+        commander: ICommander | None = None,
+        player_faction: Faction = Faction.FRIENDLY,
+        enable_debug_log: bool = False,
+    ) -> None:
+        """初始化窗口和所有子面板。
+
+        Args:
+            game_loop: #2 提供的 IGameLoop 实例（可选）
+            map_data: #2 提供的 IMap 实例（可选）
+            fog: #2 提供的 IFogOfWar 实例（可选）
+            commander: #3 提供的 ICommander 实例（可选）
+            player_faction: 玩家阵营
+            enable_debug_log: 是否启用调试模式（模拟战报输出）
+        """
+        # ── 依赖注入存储 ──────────────────────────────────────────
+        self._game_loop = game_loop
+        self._map_data = map_data
+        self._fog = fog
+        self._commander = commander
+        self._player_faction = player_faction
+        self._enable_debug_log = enable_debug_log
+
+        # ── 判断运行模式 ──────────────────────────────────────────
+        self._integrated_mode = (
+            game_loop is not None
+            and map_data is not None
+            and fog is not None
+        )
+
         # ── pygame 初始化 ────────────────────────────────────────
         pygame.init()
         pygame.display.set_caption(WINDOW_TITLE)
@@ -61,7 +121,7 @@ class MainWindow:
         # ── pygame_gui 初始化 ────────────────────────────────────
         self._ui_manager = pygame_gui.UIManager(
             (WINDOW_WIDTH, WINDOW_HEIGHT),
-            theme_path=None,  # 使用默认主题
+            theme_path=None,
         )
 
         # ── 布局计算 ─────────────────────────────────────────────
@@ -70,18 +130,81 @@ class MainWindow:
         # ── 子面板 ───────────────────────────────────────────────
         self.battle_log = BattleLogPanel(layout["battle_log_rect"], self._ui_manager)
         self.map_widget = MapWidget(layout["map_rect"])
-        self.command_panel = CommandPanel(layout["command_rect"], self._ui_manager)
+        self.command_panel = CommandPanel(
+            layout["command_rect"], self._ui_manager,
+        )
 
-        # ── Sprint 1：加载地图并输出模拟战报 ────────────────────
-        if self.map_widget.load_map_from_json():
-            logger.info("地图加载成功，准备渲染")
+        # ── Sprint 2：标记系统 ───────────────────────────────────
+        self.marker_system = MarkerSystem(
+            map_offset=(layout["map_rect"].x, layout["map_rect"].y),
+        )
+        # 构建调色板（在战报面板右侧边缘）
+        self.marker_system.build_palette(
+            x=layout["map_rect"].x - 48,
+            y=layout["map_rect"].y,
+            height=layout["map_rect"].height,
+        )
+        self.map_widget.marker_system = self.marker_system
+
+        # ── Sprint 2：迷雾渲染器 ─────────────────────────────────
+        self.fog_renderer = FogRenderer(
+            fog=fog,
+            player_faction=player_faction,
+        )
+        self.map_widget.fog_renderer = self.fog_renderer
+
+        # ── 依赖注入到子面板 ─────────────────────────────────────
+        if map_data is not None:
+            self.map_widget.set_map(map_data)
+        if fog is not None:
+            self.map_widget.set_fog(fog)
+        if commander is not None:
+            self.command_panel.set_commander(commander)
+
+        # ── 地图加载 ─────────────────────────────────────────────
+        if self._integrated_mode and map_data is not None:
+            # 集成模式：从 IMap 读取尺寸，但先用 JSON 填充地形数据
+            # （Sprint 2 过渡期：IMap 尚未完全驱动渲染）
+            if not self.map_widget.load_map_from_json():
+                logger.warning("集成模式下 JSON 地图加载失败")
+            # 更新地图边界校验
+            self.command_panel.set_map_bounds(
+                map_data.width, map_data.height
+            )
         else:
-            logger.warning("地图加载失败，地图区域将为空")
+            # Sprint 1 独立模式
+            if self.map_widget.load_map_from_json():
+                logger.info("地图加载成功（独立模式）")
+                # 加载后更新 CommandPanel 的坐标校验边界
+                self.command_panel.set_map_bounds(
+                    self.map_widget.map_width,
+                    self.map_widget.map_height,
+                )
+            else:
+                logger.warning("地图加载失败，地图区域将为空")
 
-        # 模拟战报（无需 EventBus，直接调用 BattleLogPanel.simulate_events()）
-        self.battle_log.simulate_events()
+        # ── 战报面板：对接真实事件或模拟输出 ────────────────────
+        if self._enable_debug_log:
+            # 调试模式：模拟事件输出（不订阅 EventBus）
+            self.battle_log.simulate_events()
+        else:
+            # 真实模式：订阅 EventBus 事件
+            self.battle_log.subscribe_all()
+            if self._integrated_mode:
+                logger.info("BattleLogPanel 已订阅 EventBus（集成模式）")
+            else:
+                logger.info("BattleLogPanel 已订阅 EventBus（独立模式，等待 #3 事件）")
 
-        logger.info("MainWindow 初始化完成 (%d×%d)", WINDOW_WIDTH, WINDOW_HEIGHT)
+        # ── Sprint 2：订阅 TURN_START 以同步回合数到战报 ────────
+        self._turn_counter = 0
+        event_bus.subscribe(GameEventType.TURN_START, self._on_turn_start)
+
+        logger.info(
+            "MainWindow 初始化完成 (%d×%d) mode=%s",
+            WINDOW_WIDTH,
+            WINDOW_HEIGHT,
+            "integrated" if self._integrated_mode else "standalone",
+        )
 
     # ── 主循环 ────────────────────────────────────────────────────
 
@@ -105,11 +228,12 @@ class MainWindow:
     def _handle_events(self) -> None:
         """分发 pygame 事件。
 
-        处理：
-        - QUIT / ESC → 退出
-        - pygame_gui 事件 → UIManager
-        - 执行按钮点击 → CommandPanel.on_execute_clicked()
-        - SPACE → 打印调试信息
+        处理顺序（按优先级）：
+            1. QUIT / ESC → 退出
+            2. MarkerSystem.handle_event() → 标记拖拽
+            3. pygame_gui.UIManager.process_events() → UI 控件
+            4. 按钮点击 → CommandPanel.on_execute_clicked()
+            5. SPACE → 打印调试信息
         """
         for event in pygame.event.get():
             # ── 退出 ────────────────────────────────────────────
@@ -117,34 +241,44 @@ class MainWindow:
                 self._running = False
                 return
 
-            # ── pygame_gui 事件 ─────────────────────────────────
-            self._ui_manager.process_events(event)
-
-            # ── 键盘事件 ────────────────────────────────────────
+            # ── 键盘：ESC 退出 ──────────────────────────────────
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     self._running = False
                     return
-                elif event.key == pygame.K_SPACE:
+
+            # ── 标记系统事件（在 pygame_gui 之前处理，消费拖拽） ──
+            consumed = self.marker_system.handle_event(event, self.map_widget)
+            if consumed:
+                continue
+
+            # ── pygame_gui 事件 ─────────────────────────────────
+            self._ui_manager.process_events(event)
+
+            # ── 键盘：SPACE 调试信息 ────────────────────────────
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
                     sel = self.command_panel.get_selection()
                     logger.info(
-                        "[调试] Frame=%d | 指令=%s 目标=%s 坐标=(%d,%d)",
+                        "[调试] Frame=%d | 指令=%s 目标=%s 坐标=(%d,%d) | 标记数=%d",
                         self._frame_count,
                         sel["command"],
                         sel["unit"],
                         sel["x"],
                         sel["y"],
+                        len(self.marker_system.get_all_markers()),
                     )
 
             # ── pygame_gui 按钮点击 ─────────────────────────────
             if event.type == pygame_gui.UI_BUTTON_PRESSED:
                 if event.ui_element == self.command_panel.button_execute:
-                    self.command_panel.on_execute_clicked()
-                    # 同步追加到战报面板
-                    sel = self.command_panel.get_selection()
-                    self.battle_log.append_text(
-                        f"📨 指令已发出：{sel['unit']} → {sel['command']} ({sel['x']}, {sel['y']})"
-                    )
+                    cmd_data = self.command_panel.on_execute_clicked()
+                    if cmd_data is not None:
+                        # 同步追加到战报面板
+                        self.battle_log.append_text(
+                            f"📨 指令已发出：{cmd_data['unit']} → "
+                            f"{cmd_data['command']} ({cmd_data['x']}, {cmd_data['y']})"
+                        )
 
     # ── 私有方法：更新 ────────────────────────────────────────────
 
@@ -158,18 +292,30 @@ class MainWindow:
         self.battle_log.update(time_delta)
         self.command_panel.update(time_delta)
 
-        # 地图渲染（只在需要时刷新）
-        self.map_widget.render()
+        # 地图渲染
+        if self._integrated_mode and self._game_loop is not None:
+            self.map_widget.render(self._game_loop, self._player_faction)
+        else:
+            self.map_widget.render()  # Sprint 1 兼容
 
     # ── 私有方法：渲染 ────────────────────────────────────────────
 
     def _render(self) -> None:
-        """每帧渲染顺序：背景 → 地图 → 面板装饰 → UI 控件。"""
+        """每帧渲染顺序（对齐 UI_SPEC §6.1）：
+            背景 → 地图(地形+单位+标记+迷雾) → 面板装饰 → UI 控件
+        """
         # ── 背景 ────────────────────────────────────────────────
         self._screen.fill(COLOR_BG)
 
         # ── 地图区域 ────────────────────────────────────────────
         self.map_widget.draw(self._screen)
+
+        # ── 标记调色板（Sprint 2） ──────────────────────────────
+        layout = self._calculate_layout(WINDOW_WIDTH, WINDOW_HEIGHT)
+        palette_x = layout["map_rect"].x - 48
+        self.marker_system.draw_palette(
+            self._screen, (palette_x, layout["map_rect"].y)
+        )
 
         # ── 面板背景和分隔线 ────────────────────────────────────
         self._draw_panel_decorations()
@@ -206,13 +352,35 @@ class MainWindow:
             (0, cr.top), (WINDOW_WIDTH, cr.top), 2,
         )
 
+        # 调色板分隔线（标记调色板 ↔ 地图）[Sprint 2]
+        palette_x = layout["map_rect"].x - 48
+        pygame.draw.line(
+            self._screen, COLOR_BORDER,
+            (palette_x - 2, layout["map_rect"].y),
+            (palette_x - 2, layout["map_rect"].bottom),
+            1,
+        )
+
     # ── 私有方法：退出 ────────────────────────────────────────────
 
     def _shutdown(self) -> None:
         """清理资源并退出。"""
         logger.info("MainWindow 正在退出 (共 %d 帧)", self._frame_count)
         self.battle_log.unsubscribe_all()
+        self.fog_renderer.unsubscribe_events()
+        event_bus.unsubscribe(GameEventType.TURN_START, self._on_turn_start)
         pygame.quit()
+
+    # ── 事件回调 ──────────────────────────────────────────────────
+
+    def _on_turn_start(self, _payload: object = None) -> None:
+        """TURN_START 事件回调：递增回合计数并同步到战报面板。
+
+        解决无 payload 事件（TURN_START / COMMAND_EXPIRED / HQ_UNDER_ATTACK）
+        无法从 payload 获取回合数的问题。
+        """
+        self._turn_counter += 1
+        self.battle_log.set_turn(self._turn_counter)
 
     # ── 静态方法 ──────────────────────────────────────────────────
 
