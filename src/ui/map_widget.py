@@ -25,6 +25,8 @@ from __future__ import annotations
 
 import json
 import logging
+import math
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
@@ -99,6 +101,31 @@ def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
     raise ValueError(f"无效的颜色格式: {hex_color}")
 
 
+# ── Sprint 3: 动画效果数据类 ────────────────────────────────────────────
+
+
+@dataclass
+class CombatEffect:
+    """战斗视觉效果（攻击闪现 + 浮动伤害数字）。
+
+    Attributes:
+        coord: 效果发生的地图坐标
+        damage: 伤害数值（负数=回血，0=只闪现）
+        start_ms: 效果开始时间戳（必须显式传入）
+        duration_ms: 总持续时间
+    """
+    coord: Coordinate
+    damage: int = 0
+    start_ms: int = field(default_factory=pygame.time.get_ticks)  # Bug 7 fix
+    duration_ms: int = 600
+
+    @property
+    def progress(self) -> float:
+        """0.0 ~ 1.0 的进度。"""
+        elapsed = pygame.time.get_ticks() - self.start_ms
+        return min(1.0, elapsed / self.duration_ms)
+
+
 # ── MapWidget ─────────────────────────────────────────────────────────
 
 
@@ -138,9 +165,27 @@ class MapWidget:
         self._unit_image_cache: dict[str, Optional[pygame.Surface]] = {}
         self._images_loaded: bool = False
 
+        # ── Sprint 3: 性能缓存 ─────────────────────────────────────
+        self._terrain_cache_surface: Optional[pygame.Surface] = None  # 地形+网格静态缓存
+        self._font = pygame.font.Font(None, 14)  # 预创建字体，避免每帧分配
+        self._rgb_friendly = _hex_to_rgb(COLOR_FRIENDLY)  # 预计算 RGB
+        self._rgb_enemy = _hex_to_rgb(COLOR_ENEMY)
+
         # ── 注入的子系统（Sprint 2） ──────────────────────────────
         self.marker_system: Optional[MarkerSystem] = None
         self.fog_renderer: Optional[FogRenderer] = None
+
+        # ── Sprint 3: 动画与视觉效果 ─────────────────────────────────
+        # 单位移动插值: unit_id → (prev_coord, target_coord, start_ms, duration_ms)
+        self._unit_animations: dict[str, tuple[Coordinate, Coordinate, int, int]] = {}
+        self._prev_unit_positions: dict[str, Coordinate] = {}  # 上帧位置
+        # 战斗效果队列
+        self._combat_effects: list[CombatEffect] = []
+        # 阵亡单位淡化: unit_id → death_time_ms
+        self._dead_unit_times: dict[str, int] = {}
+        self._dead_unit_display_ms: int = 3000  # 3 秒后完全消失
+        # 单位选择（Sprint 3 Day 5）
+        self._selected_unit_id: Optional[str] = None
 
         # ── 预加载图片 ────────────────────────────────────────────
         self._load_tile_images()
@@ -172,10 +217,15 @@ class MapWidget:
     def set_map(self, map_data: IMap) -> None:
         """绑定地图数据源（Sprint 2 对接 #2 的 IMap 实现）。
 
+        Bug 6 fix: 如果已有 terrain_data，同步重建缓存。
+
         Args:
             map_data: #2 提供的 IMap 接口实例
         """
         self._map_data = map_data
+        # Bug 6 fix: 确保 terrain cache 可用
+        if self._terrain_data and self._terrain_cache_surface is None:
+            self._build_terrain_cache()
         logger.info("MapWidget 已绑定 IMap 数据源")
 
     def set_fog(self, fog: IFogOfWar) -> None:
@@ -234,6 +284,11 @@ class MapWidget:
             (self._map_width * self._tile_size, self._map_height * self._tile_size)
         )
 
+        # Sprint 3: 预渲染地形+网格到静态缓存（消除 ~337 次/帧 draw）
+        self._build_terrain_cache()
+
+        # 计算地图在显示区域中的偏移（居中）
+
         # 计算地图在显示区域中的偏移（居中）
         offset_x = (self.rect.width - self.pixel_width) // 2
         offset_y = (self.rect.height - self.pixel_height) // 2
@@ -258,6 +313,7 @@ class MapWidget:
         self,
         game_loop: IGameLoop | None = None,
         player_faction: Faction = Faction.FRIENDLY,
+        time_delta: float = 0.033,
     ) -> None:
         """完整渲染一帧：地形层 + 网格线 + 单位层 + 标记层 + 迷雾层。
 
@@ -271,31 +327,39 @@ class MapWidget:
         Args:
             game_loop: #2 提供的 IGameLoop 实例（获取单位列表）
             player_faction: 玩家阵营（用于可见性判定）
+            time_delta: 上一帧时间间隔（秒），用于动画插值
         """
         if self._map_surface is None:
             return
 
-        # ── 层 0: 地形 ────────────────────────────────────────────
-        self._render_terrain_layer()
+        # ── 层 0+1: 地形 + 网格线（Sprint 3: 从静态缓存 blit）──
+        if self._terrain_cache_surface is not None:
+            self._map_surface.blit(self._terrain_cache_surface, (0, 0))
+        else:
+            self._render_terrain_layer()
+            self._render_grid_lines()
 
-        # ── 层 1: 网格线 ──────────────────────────────────────────
-        self._render_grid_lines()
+        # ── 层 1.5: HQ 脉冲（Sprint 3） ───────────────────────────
+        self._render_hq_pulse_overlay()
 
         # ── 层 2: 单位 ────────────────────────────────────────────
         if game_loop is not None:
-            self._render_unit_layer_from_gameloop(game_loop, player_faction)
+            self._render_unit_layer_from_gameloop(game_loop, player_faction, time_delta)
         else:
             # Sprint 1 兼容模式：无可见性过滤
             self._render_unit_layer_legacy()
+
+        # ── 层 2.5: 战斗效果（Sprint 3） ────────────────────────────
+        self._render_combat_effects()
 
         # ── 层 3: 标记（Sprint 2） ─────────────────────────────────
         if self.marker_system is not None:
             self.marker_system.draw_markers(self._map_surface, self)
 
-        # ── 层 4: 迷雾 + 高亮（Sprint 2） ────────────────────────────
+        # ── 层 4: 迷雾 + 高亮（Sprint 2/3） ────────────────────────────
         # 注意：先绘制迷雾遮罩，再绘制高亮圈，确保高亮在迷雾之上可见
         if self.fog_renderer is not None:
-            self.fog_renderer.render_fog(self._map_surface)
+            self.fog_renderer.render_fog(self._map_surface, time_delta)
             self.fog_renderer.render_highlights(self._map_surface)
 
     def draw(self, screen: pygame.Surface) -> None:
@@ -347,6 +411,69 @@ class MapWidget:
             self.rect.y + self._map_offset[1] + coord.y * self._tile_size,
             self._tile_size,
             self._tile_size,
+        )
+
+    # ── 私有方法：地形缓存（Sprint 3 性能优化）───────────────────────
+
+    def _build_terrain_cache(self) -> None:
+        """预渲染地形瓦片 + 网格线到静态缓存 Surface。
+
+        地形完全静态，网格线也完全静态。将它们预渲染到 _terrain_cache_surface，
+        之后每帧只需一次 blit，消除 ~337 次/帧 draw 调用。
+        """
+        if self._map_width == 0 or self._map_height == 0:
+            return
+
+        pw = self._map_width * self._tile_size
+        ph = self._map_height * self._tile_size
+        self._terrain_cache_surface = pygame.Surface((pw, ph))
+
+        # ── 地形瓦片 ────────────────────────────────────────────────
+        for row_idx, row_data in enumerate(self._terrain_data):
+            for col_idx, terrain_code in enumerate(row_data):
+                try:
+                    terrain = TerrainType(terrain_code)
+                except ValueError:
+                    terrain = TerrainType.PLAIN
+
+                rect = pygame.Rect(
+                    col_idx * self._tile_size,
+                    row_idx * self._tile_size,
+                    self._tile_size,
+                    self._tile_size,
+                )
+
+                tile_img = self._tile_image_cache.get(terrain)
+                if tile_img is not None:
+                    self._terrain_cache_surface.blit(tile_img, rect.topleft)
+                else:
+                    color = TERRAIN_COLORS.get(terrain, (128, 128, 128))
+                    pygame.draw.rect(self._terrain_cache_surface, color, rect)
+
+        # ── 网格线 ──────────────────────────────────────────────────
+        # 垂直线
+        for col in range(self._map_width + 1):
+            x = col * self._tile_size
+            pygame.draw.line(
+                self._terrain_cache_surface,
+                GRID_LINE_COLOR,
+                (x, 0),
+                (x, ph),
+                GRID_LINE_WIDTH,
+            )
+        # 水平线
+        for row in range(self._map_height + 1):
+            y = row * self._tile_size
+            pygame.draw.line(
+                self._terrain_cache_surface,
+                GRID_LINE_COLOR,
+                (0, y),
+                (pw, y),
+                GRID_LINE_WIDTH,
+            )
+
+        logger.debug(
+            "地形缓存已构建: %d×%d (%d px)", self._map_width, self._map_height, pw
         )
 
     # ── 私有方法：图片加载 ──────────────────────────────────────────
@@ -429,19 +556,23 @@ class MapWidget:
             )
 
     def _render_unit_layer_from_gameloop(
-        self, game_loop: IGameLoop, player_faction: Faction
+        self, game_loop: IGameLoop, player_faction: Faction, time_delta: float = 0.033
     ) -> None:
-        """Sprint 2：从 IGameLoop 获取单位并做可见性过滤。
+        """Sprint 3：从 IGameLoop 获取单位并做可见性过滤 + 移动平滑动画。
+
+        检测单位位置变化 → 创建插值动画（300ms lerp）。
+        阵亡单位绘制为灰色，3 秒后完全消失。
 
         Args:
             game_loop: #2 提供的 IGameLoop 实例
             player_faction: 玩家阵营
+            time_delta: 上一帧时间间隔（秒）
         """
         if self._map_surface is None:
             return
 
-        color_friendly = _hex_to_rgb(COLOR_FRIENDLY)
-        color_enemy = _hex_to_rgb(COLOR_ENEMY)
+        now_ms = pygame.time.get_ticks()
+        anim_duration_ms = 300  # 移动动画持续时间
 
         all_units = game_loop.get_all_units()
         for unit in all_units:
@@ -451,32 +582,96 @@ class MapWidget:
                     continue
 
             is_friendly = unit.faction == player_faction
-            color = color_friendly if is_friendly else color_enemy
+            is_dead = not unit.is_alive
 
-            x = unit.position.x * self._tile_size
-            y = unit.position.y * self._tile_size
+            # ── Sprint 3: 检测位置变化，启动移动动画 ────────────────
+            actual_pos = unit.position
+            prev_pos = self._prev_unit_positions.get(unit.unit_id)
+            if prev_pos is not None and prev_pos != actual_pos:
+                self._unit_animations[unit.unit_id] = (
+                    prev_pos, actual_pos, now_ms, anim_duration_ms
+                )
+
+            # ── Sprint 3: 计算插值后的绘制位置 ─────────────────────
+            draw_pos = actual_pos
+            if unit.unit_id in self._unit_animations:
+                prev, target, start, dur = self._unit_animations[unit.unit_id]
+                elapsed = now_ms - start
+                if elapsed >= dur:
+                    del self._unit_animations[unit.unit_id]
+                else:
+                    t = elapsed / dur
+                    # ease-out quad
+                    t = 1.0 - (1.0 - t) ** 2
+                    fx = prev.x + (target.x - prev.x) * t
+                    fy = prev.y + (target.y - prev.y) * t
+                    draw_pos = Coordinate(round(fx), round(fy))  # Bug 9 fix: round for smooth lerp
+
+            # 更新位置追踪
+            self._prev_unit_positions[unit.unit_id] = actual_pos
+
+            # ── Sprint 3: 阵亡单位淡化 ─────────────────────────────
+            if is_dead:
+                if unit.unit_id not in self._dead_unit_times:
+                    self._dead_unit_times[unit.unit_id] = now_ms
+                death_elapsed = now_ms - self._dead_unit_times[unit.unit_id]
+                if death_elapsed > self._dead_unit_display_ms:
+                    continue
+                alpha = max(30, 120 - int(120 * death_elapsed / self._dead_unit_display_ms))
+                color = (128, 128, 128)
+            else:
+                color = self._rgb_friendly if is_friendly else self._rgb_enemy
+                alpha = 255
+
+            # Bug 5 fix: 清理超时死单位条目（每 5 秒执行一次）
+            if is_dead and now_ms % 5000 < int(time_delta * 1000):
+                expired_ids = [
+                    uid for uid, t in self._dead_unit_times.items()
+                    if now_ms - t > self._dead_unit_display_ms + 5000
+                ]
+                for uid in expired_ids:
+                    self._dead_unit_times.pop(uid, None)
+                    self._prev_unit_positions.pop(uid, None)
+                    self._unit_animations.pop(uid, None)
+
+            x = draw_pos.x * self._tile_size
+            y = draw_pos.y * self._tile_size
+
+            # ── Sprint 3: 选中单位高亮 ─────────────────────────────
+            if unit.unit_id == self._selected_unit_id:
+                pulse = 0.5 + 0.5 * math.sin(now_ms * 0.004)
+                border_color = (255, 255, int(128 + 127 * pulse))
+                border_rect = pygame.Rect(x - 1, y - 1, self._tile_size - 2, self._tile_size - 2)
+                pygame.draw.rect(self._map_surface, border_color, border_rect, 2, border_radius=4)
 
             unit_rect = pygame.Rect(
                 x + 2, y + 2,
                 self._tile_size - 4, self._tile_size - 4,
             )
-            pygame.draw.rect(self._map_surface, color, unit_rect, border_radius=4)
+
+            if alpha < 255:
+                # 半透明渲染需要单独 Surface
+                unit_overlay = pygame.Surface(
+                    (unit_rect.width, unit_rect.height), pygame.SRCALPHA
+                )
+                pygame.draw.rect(unit_overlay, (*color, alpha),
+                                 unit_overlay.get_rect(), border_radius=4)
+                self._map_surface.blit(unit_overlay, unit_rect.topleft)
+            else:
+                pygame.draw.rect(self._map_surface, color, unit_rect, border_radius=4)
 
             # 兵种简写标签
-            abbr = _get_unit_abbreviation(unit.unit_type.value)
-            self._draw_centered_text(abbr, x, y, (255, 255, 255))
-
-            # 阵亡标记
-            if not unit.is_alive:
-                self._draw_centered_text("✕", x, y, (255, 0, 0))
+            if not is_dead:
+                abbr = _get_unit_abbreviation(unit.unit_type.value)
+                self._draw_centered_text(abbr, x, y, (255, 255, 255))
 
     def _render_unit_layer_legacy(self) -> None:
         """Sprint 1 兼容：从 JSON 加载的单位列表渲染（无可见性过滤）。"""
         if self._map_surface is None:
             return
 
-        color_friendly = _hex_to_rgb(COLOR_FRIENDLY)
-        color_enemy = _hex_to_rgb(COLOR_ENEMY)
+        color_friendly = self._rgb_friendly
+        color_enemy = self._rgb_enemy
 
         for unit in self._units:
             faction = unit.get("faction", "FRIENDLY")
@@ -499,7 +694,7 @@ class MapWidget:
     def _draw_centered_text(
         self, text: str, tile_x: int, tile_y: int, color: tuple[int, int, int]
     ) -> None:
-        """在指定格子的中央绘制文字（使用 pygame 默认字体）。
+        """在指定格子的中央绘制文字（使用缓存的字体对象）。
 
         Args:
             text: 要绘制的文字
@@ -510,8 +705,8 @@ class MapWidget:
         if self._map_surface is None:
             return
 
-        font = pygame.font.Font(None, 14)
-        text_surf = font.render(text, True, color)
+        # Sprint 3: 使用 __init__ 中缓存的字体，避免每帧分配
+        text_surf = self._font.render(text, True, color)
         text_rect = text_surf.get_rect(
             center=(
                 tile_x + self._tile_size // 2,
@@ -519,3 +714,116 @@ class MapWidget:
             )
         )
         self._map_surface.blit(text_surf, text_rect)
+
+    # ── Sprint 3: 单位选择 API (Bug 20 fix: 封装公开方法) ───────────
+
+    def select_unit(self, unit_id: str | None) -> None:
+        """选择单位（显示脉冲高亮边框）。None 取消选择。"""
+        self._selected_unit_id = unit_id
+
+    @property
+    def selected_unit_id(self) -> str | None:
+        """当前选中单位的 ID，无选中返回 None。"""
+        return self._selected_unit_id
+
+    # ── Sprint 3: 战斗效果渲染 ────────────────────────────────────────
+
+    def add_combat_effect(self, coord: Coordinate, damage: int = 0) -> None:
+        """添加一个战斗视觉效果（攻击闪现 + 浮动伤害数字）。
+
+        在指定坐标产生 200ms 红色闪现和一个向上飘动的伤害数字。
+
+        Args:
+            coord: 地图坐标
+            damage: 伤害数值（正数=受到伤害，0=只闪现）
+        """
+        self._combat_effects.append(CombatEffect(
+            coord=coord,
+            damage=damage,
+            start_ms=pygame.time.get_ticks(),
+            duration_ms=600,
+        ))
+
+    def _render_combat_effects(self) -> None:
+        """渲染所有活跃的战斗效果（闪现 + 浮动伤害数字）。"""
+        if self._map_surface is None:
+            return
+
+        now_ms = pygame.time.get_ticks()
+
+        # 清理已完成的 effect
+        self._combat_effects = [
+            e for e in self._combat_effects
+            if now_ms - e.start_ms < e.duration_ms  # Bug 8 fix: use cached now_ms
+        ]
+
+        for effect in self._combat_effects:
+            elapsed = now_ms - effect.start_ms
+            t = effect.progress
+
+            px = effect.coord.x * self._tile_size
+            py = effect.coord.y * self._tile_size
+
+            # ── 闪现（前 200ms） ──────────────────────────────────
+            if t < 0.33:
+                flash_alpha = int(180 * (1.0 - t / 0.33))
+                flash_rect = pygame.Rect(
+                    px + 1, py + 1,
+                    self._tile_size - 2, self._tile_size - 2,
+                )
+                flash_surf = pygame.Surface(
+                    (flash_rect.width, flash_rect.height), pygame.SRCALPHA
+                )
+                pygame.draw.rect(
+                    flash_surf, (255, 80, 80, flash_alpha),
+                    flash_surf.get_rect(), border_radius=4,
+                )
+                self._map_surface.blit(flash_surf, flash_rect.topleft)
+
+            # ── 浮动伤害数字 ──────────────────────────────────────
+            if effect.damage != 0:
+                float_y = py - int(20 * t)  # 向上飘动
+                alpha = int(255 * (1.0 - t))  # 渐隐
+                damage_text = f"-{effect.damage}"
+                text_color = (255, 80, 80, alpha) if effect.damage > 0 else (80, 255, 80, alpha)
+                text_surf = self._font.render(damage_text, True, text_color[:3])
+                # 半透明处理
+                text_overlay = pygame.Surface(text_surf.get_size(), pygame.SRCALPHA)
+                text_overlay.blit(text_surf, (0, 0))
+                text_overlay.set_alpha(alpha)
+                text_x = px + (self._tile_size - text_surf.get_width()) // 2
+                self._map_surface.blit(text_overlay, (text_x, float_y))
+
+    # ── Sprint 3: HQ 脉冲高亮 ─────────────────────────────────────────
+
+    def _render_hq_pulse_overlay(self) -> None:
+        """在所有 HQ_CELL 格上绘制金色呼吸脉冲。"""
+        for row_idx, row_data in enumerate(self._terrain_data):
+            for col_idx, terrain_code in enumerate(row_data):
+                if terrain_code == TerrainType.HQ_CELL.value:
+                    self._render_hq_pulse(Coordinate(col_idx, row_idx))
+
+    def _render_hq_pulse(self, coord: Coordinate) -> None:
+        """在指定 HQ 坐标绘制金色呼吸脉冲效果。
+
+        Args:
+            coord: HQ 格的地图坐标
+        """
+        if self._map_surface is None:
+            return
+
+        now_ms = pygame.time.get_ticks()
+        pulse = 0.5 + 0.5 * math.sin(now_ms * 0.003)
+        alpha = int(60 + 60 * pulse)  # 60 ~ 120
+
+        px = coord.x * self._tile_size
+        py = coord.y * self._tile_size
+        pulse_rect = pygame.Rect(px + 2, py + 2, self._tile_size - 4, self._tile_size - 4)
+        pulse_surf = pygame.Surface(
+            (pulse_rect.width, pulse_rect.height), pygame.SRCALPHA
+        )
+        pygame.draw.rect(
+            pulse_surf, (255, 215, 0, alpha),
+            pulse_surf.get_rect(), border_radius=4,
+        )
+        self._map_surface.blit(pulse_surf, pulse_rect.topleft)

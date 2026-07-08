@@ -24,6 +24,8 @@ Sprint 2 新增：
 from __future__ import annotations
 
 import logging
+from pathlib import Path
+import sys
 from typing import TYPE_CHECKING, Optional
 
 import pygame
@@ -45,6 +47,7 @@ from src.ui.command_panel import CommandPanel
 from src.ui.fog_renderer import FogRenderer
 from src.ui.map_widget import MapWidget
 from src.ui.marker import MarkerSystem
+from src.ui.sounds import sound_manager  # Sprint 3: 音效系统
 
 if TYPE_CHECKING:
     from src.core.interfaces import ICommander, IFogOfWar, IGameLoop, IMap
@@ -121,11 +124,14 @@ class MainWindow:
         # ── pygame_gui 初始化 ────────────────────────────────────
         self._ui_manager = pygame_gui.UIManager(
             (WINDOW_WIDTH, WINDOW_HEIGHT),
-            theme_path=None,
+            # Bug 19 fix: 使用项目根目录的绝对路径
+            theme_path=str(Path(__file__).resolve().parent.parent.parent / "data" / "theme.json"),
         )
 
         # ── 布局计算 ─────────────────────────────────────────────
-        layout = self._calculate_layout(WINDOW_WIDTH, WINDOW_HEIGHT)
+        # Sprint 3: 缓存布局结果，避免每帧 2 次重新计算
+        self._layout = self._calculate_layout(WINDOW_WIDTH, WINDOW_HEIGHT)
+        layout = self._layout
 
         # ── 子面板 ───────────────────────────────────────────────
         self.battle_log = BattleLogPanel(layout["battle_log_rect"], self._ui_manager)
@@ -247,11 +253,18 @@ class MainWindow:
                 if event.key == pygame.K_ESCAPE:
                     self._running = False
                     return
+                # Sprint 3: Ctrl+Z 撤销删除的标记
+                if event.key == pygame.K_z and pygame.key.get_mods() & pygame.KMOD_CTRL:
+                    self.marker_system.undo_last_delete()
 
             # ── 标记系统事件（在 pygame_gui 之前处理，消费拖拽） ──
             consumed = self.marker_system.handle_event(event, self.map_widget)
             if consumed:
                 continue
+
+            # ── Sprint 3: 地图点击 → 单位选择 ────────────────────────
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                self._handle_map_click(event.pos)
 
             # ── pygame_gui 事件 ─────────────────────────────────
             self._ui_manager.process_events(event)
@@ -273,13 +286,19 @@ class MainWindow:
             # ── pygame_gui 按钮点击 ─────────────────────────────
             if event.type == pygame_gui.UI_BUTTON_PRESSED:
                 if event.ui_element == self.command_panel.button_execute:
+                    sound_manager.play_ui_click()  # Sprint 3: 音效
                     cmd_data = self.command_panel.on_execute_clicked()
                     if cmd_data is not None:
-                        # 同步追加到战报面板
+                        sound_manager.play_command_sent()
                         self.battle_log.append_text(
                             f"📨 指令已发出：{cmd_data['unit']} → "
                             f"{cmd_data['command']} ({cmd_data['x']}, {cmd_data['y']})"
                         )
+
+            # ── Sprint 3: 文本输入变化 → 实时坐标校验 ────────────
+            if event.type == pygame_gui.UI_TEXT_ENTRY_CHANGED:
+                if event.ui_element in (self.command_panel.entry_x, self.command_panel.entry_y):
+                    self.command_panel.validate_inputs()
 
     # ── 私有方法：更新 ────────────────────────────────────────────
 
@@ -295,9 +314,9 @@ class MainWindow:
 
         # 地图渲染
         if self._integrated_mode and self._game_loop is not None:
-            self.map_widget.render(self._game_loop, self._player_faction)
+            self.map_widget.render(self._game_loop, self._player_faction, time_delta)
         else:
-            self.map_widget.render()  # Sprint 1 兼容
+            self.map_widget.render(time_delta=time_delta)  # Sprint 1 兼容
 
     # ── 私有方法：渲染 ────────────────────────────────────────────
 
@@ -312,7 +331,7 @@ class MainWindow:
         self.map_widget.draw(self._screen)
 
         # ── 标记调色板（Sprint 2） ──────────────────────────────
-        layout = self._calculate_layout(WINDOW_WIDTH, WINDOW_HEIGHT)
+        layout = self._layout
         palette_x = layout["map_rect"].x - 48
         self.marker_system.draw_palette(
             self._screen, (palette_x, layout["map_rect"].y)
@@ -329,7 +348,7 @@ class MainWindow:
 
     def _draw_panel_decorations(self) -> None:
         """绘制面板背景和分隔线（非 pygame_gui 控件）。"""
-        layout = self._calculate_layout(WINDOW_WIDTH, WINDOW_HEIGHT)
+        layout = self._layout
 
         # 左侧战报面板背景
         br = layout["battle_log_rect"]
@@ -373,18 +392,49 @@ class MainWindow:
         event_bus.unsubscribe(GameEventType.TURN_END, self._on_turn_end)
         pygame.quit()
 
+    # ── Sprint 3: 地图点击单位选择 ──────────────────────────────────
+
+    def _handle_map_click(self, screen_pos: tuple[int, int]) -> None:
+        """左键点击地图格 → 选择该格上的第一个可见单位。
+
+        Args:
+            screen_pos: 屏幕像素坐标 (px, py)
+        """
+        if self.map_widget is None:
+            return
+        coord = self.map_widget.pixel_to_coord(
+            screen_pos[0] - self.map_widget.rect.x,
+            screen_pos[1] - self.map_widget.rect.y,
+        )
+        if coord is None:
+            return
+
+        # 在 GameLoop 模式下，查找该坐标上的单位
+        if self._game_loop is not None and self._fog is not None:
+            for unit in self._game_loop.get_all_units():
+                if unit.position == coord and self._fog.is_unit_visible(unit, self._player_faction):
+                    self.map_widget.select_unit(unit.unit_id)  # Bug 20 fix: 公开 API
+                    logger.debug("选中单位: %s @(%d,%d)", unit.name, coord.x, coord.y)
+                    return
+        # 点击空地取消选择
+        self.map_widget.select_unit(None)
+
     # ── 事件回调 ──────────────────────────────────────────────────
 
-    def _on_turn_start(self, _payload: object = None) -> None:
-        """TURN_START 事件回调：递增回合计数并同步到战报面板。
+    def _on_turn_start(self, _payload: object | None = None) -> None:
+        """TURN_START 事件回调：递增回合计数、同步到战报面板、标记迷雾为脏。
 
         解决无 payload 事件（TURN_START / COMMAND_EXPIRED / HQ_UNDER_ATTACK）
         无法从 payload 获取回合数的问题。
+
+        Sprint 3: 标记 FogRenderer 为脏，确保回合边界后迷雾因单位移动而重建。
         """
         self._turn_counter += 1
         self.battle_log.set_turn(self._turn_counter)
+        self.fog_renderer.mark_fog_dirty()
+        sound_manager.play_turn_start()  # Sprint 3: 回合开始音效
 
-    def _on_turn_end(self, _payload: object = None) -> None:
+    def _on_turn_end(self, _payload: object | None = None) -> None:
         """TURN_END 事件回调：驱逐迷雾高亮区域过期。
 
         FogRenderer 的高亮区域有 remaining_turns 生命周期，
