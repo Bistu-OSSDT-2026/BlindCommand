@@ -180,18 +180,21 @@ class BattleSystem:
             return None
         if not attacker.can_attack(defender) and not defender.can_attack(attacker):
             return None
+        if not attacker.can_attack(defender):
+            return None  # 仅防御方可攻击时，不结算（由配对逻辑保证正确的攻击方）
 
         # 1. 记录战前 HP
         a_hp_before = attacker.current_hp
         d_hp_before = defender.current_hp
 
-        # 设置地形加成
-        attacker.terrain_defense_bonus = self._game_map.get_defense_bonus(
-            attacker.position
-        )
-        defender.terrain_defense_bonus = self._game_map.get_defense_bonus(
-            defender.position
-        )
+        # 设置地形加成（保留 HOLD 等指令可能已设置的临时加成）
+        a_map_bonus = self._game_map.get_defense_bonus(attacker.position)
+        d_map_bonus = self._game_map.get_defense_bonus(defender.position)
+        # 若已有加成超过纯地图值，保留差额（如 HOLD 的 +1）
+        a_extra = max(0, attacker.terrain_defense_bonus - a_map_bonus)
+        d_extra = max(0, defender.terrain_defense_bonus - d_map_bonus)
+        attacker.terrain_defense_bonus = a_map_bonus + a_extra
+        defender.terrain_defense_bonus = d_map_bonus + d_extra
 
         damage_to_defender = 0
         damage_to_attacker = 0
@@ -245,29 +248,27 @@ class BattleSystem:
         )
 
         # 7. 广播事件
-        # ── BATTLE_RESULT ────────────────────────────────────────────
-        event_bus.emit(
-            GameEventType.BATTLE_RESULT,
-            BattleResultPayload(
-                turn=current_turn,
-                attacker_id=attacker.unit_id,
-                attacker_name=attacker.name,
-                attacker_faction=attacker.faction.value,
-                attacker_hp_before=a_hp_before,
-                attacker_hp_after=attacker.current_hp,
-                defender_id=defender.unit_id,
-                defender_name=defender.name,
-                defender_faction=defender.faction.value,
-                defender_hp_before=d_hp_before,
-                defender_hp_after=defender.current_hp,
-                damage_to_defender=damage_to_defender,
-                damage_to_attacker=damage_to_attacker,
-                attacker_killed=attacker_killed,
-                defender_killed=defender_killed,
-                location=defender.position.to_tuple(),
-                outcome=outcome,
-            ),
+        # ── 构造 BattleResultPayload（一次构造，emit + return 共用） ──
+        battle_payload = BattleResultPayload(
+            turn=current_turn,
+            attacker_id=attacker.unit_id,
+            attacker_name=attacker.name,
+            attacker_faction=attacker.faction.value,
+            attacker_hp_before=a_hp_before,
+            attacker_hp_after=attacker.current_hp,
+            defender_id=defender.unit_id,
+            defender_name=defender.name,
+            defender_faction=defender.faction.value,
+            defender_hp_before=d_hp_before,
+            defender_hp_after=defender.current_hp,
+            damage_to_defender=damage_to_defender,
+            damage_to_attacker=damage_to_attacker,
+            attacker_killed=attacker_killed,
+            defender_killed=defender_killed,
+            location=defender.position.to_tuple(),
+            outcome=outcome,
         )
+        event_bus.emit(GameEventType.BATTLE_RESULT, battle_payload)
 
         # ── UNIT_DAMAGED (受伤但未阵亡) ──────────────────────────────
         if not attacker_killed and damage_to_attacker > 0:
@@ -306,25 +307,7 @@ class BattleSystem:
         if defender.is_hq and damage_to_defender > 0:
             event_bus.emit(GameEventType.HQ_UNDER_ATTACK, None)
 
-        return BattleResultPayload(
-            turn=current_turn,
-            attacker_id=attacker.unit_id,
-            attacker_name=attacker.name,
-            attacker_faction=attacker.faction.value,
-            attacker_hp_before=a_hp_before,
-            attacker_hp_after=attacker.current_hp,
-            defender_id=defender.unit_id,
-            defender_name=defender.name,
-            defender_faction=defender.faction.value,
-            defender_hp_before=d_hp_before,
-            defender_hp_after=defender.current_hp,
-            damage_to_defender=damage_to_defender,
-            damage_to_attacker=damage_to_attacker,
-            attacker_killed=attacker_killed,
-            defender_killed=defender_killed,
-            location=defender.position.to_tuple(),
-            outcome=outcome,
-        )
+        return battle_payload
 
     # ── 辅助方法 ────────────────────────────────────────────────────────
 
@@ -348,8 +331,7 @@ class BattleSystem:
         Returns:
             BattleOutcome 的值字符串
         """
-        if defender_routed:
-            return BattleOutcome.ENEMY_ROUTED.value
+        # 阵亡判定优先于溃逃（避免"敌方溃逃但我方已阵亡"的误导措辞）
         if attacker_killed and defender_killed:
             return BattleOutcome.MUTUAL_KILL.value
         if attacker_killed:
@@ -359,13 +341,16 @@ class BattleSystem:
                 return BattleOutcome.DECISIVE_WIN.value
             return BattleOutcome.PYRHHIC_WIN.value
 
-        # 双方存活
+        # 双方存活：溃逃判定
+        if defender_routed:
+            return BattleOutcome.ENEMY_ROUTED.value
+
+        # 双方存活（未溃逃）
         if attacker_hp_ratio >= COMBAT_HEALTHY_HP_RATIO:
             return BattleOutcome.DECISIVE_WIN.value
         if attacker_hp_ratio < COMBAT_CRITICAL_HP_RATIO:
             return BattleOutcome.PYRHHIC_WIN.value
-        # 攻方 HP 在 [CRITICAL, HEALTHY) 之间：苦战险胜
-        return BattleOutcome.PYRHHIC_WIN.value
+        return BattleOutcome.STALEMATE.value
 
     @staticmethod
     def _should_strike_first(unit: IUnit, target: IUnit) -> bool:
