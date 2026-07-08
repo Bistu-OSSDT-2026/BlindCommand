@@ -154,6 +154,7 @@ class Commander(ICommander):
         game_map: IMap,
         command_queue: CommandQueue | None = None,
         combat_resolver: CombatResolver | None = None,
+        range_query: IRangeQuery | None = None,
         seed: int | None = None,
     ) -> None:
         """初始化指令系统。
@@ -163,15 +164,14 @@ class Commander(ICommander):
             game_map: 地图接口（#2 实现，用于 find_path / move_unit）
             command_queue: 延迟队列（若 None 则创建默认队列）
             combat_resolver: 战斗结算回调，签名 (attacker, defender, turn) -> payload|None
-                             若 None，ATTACK 指令中的战斗将被跳过
+            range_query: 范围检索接口（#2 实现，用于 SCOUT 侦察 / ATTACK 索敌等）
             seed: 随机种子（用于 CommandQueue 延迟的可重现测试）
         """
-        import random as _random
-
         self._unit_manager = unit_manager
         self._map = game_map
         self._queue = command_queue if command_queue is not None else CommandQueue(seed=seed)
         self._combat_resolver = combat_resolver
+        self._range_query = range_query
 
         # 占领计数器：unit_id → 已连续停留回合数
         self._capture_progress: dict[str, int] = {}
@@ -297,10 +297,11 @@ class Commander(ICommander):
                 logger.info("指令作废: %s 已阵亡", cmd.target_unit_id)
                 continue
 
-            # 从 game_map 构造 IGameState（简化：直接用 Commander 持有的引用）
+            # 从 Commander 持有的引用构造 IGameState
             game_state = _SimpleGameState(
                 game_map=self._map,
                 unit_manager=self._unit_manager,
+                range_query=self._range_query,
                 current_turn=current_turn,
             )
 
@@ -594,7 +595,6 @@ class Commander(ICommander):
         steps = unit.speed + 2
 
         # 记录旧位置并移除占用（后续直接设坐标，不经过 move_unit）
-        old_positions: list[Coordinate] = [start_pos]
         game_map.remove_unit(unit)
 
         for _ in range(steps):
@@ -606,7 +606,6 @@ class Commander(ICommander):
                 break
 
             self._set_unit_position(unit, next_coord)
-            old_positions.append(next_coord)
 
         # 在最终位置重新放置单位
         game_map.place_unit(unit, unit.position)
@@ -849,7 +848,7 @@ class Commander(ICommander):
 class _SimpleGameState(IGameState):
     """IGameState 的简易实现，供 Commander 内部使用。
 
-    包装 game_map + unit_manager + current_turn，提供只读查询。
+    包装 game_map + unit_manager + range_query + current_turn，提供只读查询。
     不持有 GameLoop 引用，避免循环依赖。
     """
 
@@ -857,10 +856,12 @@ class _SimpleGameState(IGameState):
         self,
         game_map: IMap,
         unit_manager: UnitManager,
+        range_query: IRangeQuery | None,
         current_turn: int,
     ) -> None:
         self._map = game_map
         self._unit_manager = unit_manager
+        self._range_query = range_query
         self._current_turn = current_turn
 
     def get_unit_by_id(self, unit_id: str) -> IUnit | None:
@@ -870,9 +871,7 @@ class _SimpleGameState(IGameState):
         return self._map
 
     def get_range_query(self) -> IRangeQuery | None:
-        # Commander 不持有 IRangeQuery — 返回 None 让调用方用备用逻辑
-        # GameLoop 集成时通过 issue_command 的上下文传入
-        return None
+        return self._range_query
 
     def get_current_turn(self) -> int:
         return self._current_turn
