@@ -26,11 +26,43 @@ from __future__ import annotations
 import json
 import logging
 import math
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 import pygame
+
+# ── PyInstaller onefile 路径解析 ──────────────────────────────────────
+
+
+def _get_base_path() -> Path:
+    """返回项目根目录路径（兼容 PyInstaller onefile 模式）。"""
+    if getattr(sys, "frozen", False):
+        return Path(sys._MEIPASS)
+    return Path(__file__).resolve().parent.parent.parent
+
+
+def _create_font(size: int) -> pygame.font.Font:
+    """创建字体。优先系统字体绝对路径 → 捆绑字体 → 默认字体。"""
+    # 扫描系统字体目录（PyInstaller 中 SDL 搜索失效，直接路径仍可用）
+    import os as _os
+    _fonts_dir = _os.environ.get("WINDIR", "C:/Windows") + "/Fonts"
+    for _name in ("msyh.ttc", "msyh.ttf", "simkai.ttf", "simsun.ttc", "FZYTK.TTF"):
+        _fp = _os.path.join(_fonts_dir, _name)
+        if _os.path.exists(_fp):
+            try:
+                return pygame.font.Font(_fp, size)
+            except Exception:
+                continue
+    # 捆绑字体
+    bundled = _get_base_path() / "data" / "chinese.ttf"
+    if bundled.exists():
+        try:
+            return pygame.font.Font(str(bundled), size)
+        except Exception:
+            pass
+    return pygame.font.Font(None, size)
 
 from src.core.constants import (
     ASSETS_DIR,
@@ -68,10 +100,10 @@ GRID_LINE_WIDTH: int = 1
 # ── 单位兵种简写 ──────────────────────────────────────────────────────
 
 UNIT_ABBREVIATIONS: dict[str, str] = {
-    "Infantry":  "步兵",
-    "Cavalry":   "骑兵",
-    "Artillery": "炮兵",
-    "Scout":     "侦察",
+    "Infantry":  "In",
+    "Cavalry":   "Cv",
+    "Artillery": "Ar",
+    "Scout":     "Sc",
     "HQ":        "HQ",
 }
 
@@ -167,7 +199,7 @@ class MapWidget:
 
         # ── Sprint 3: 性能缓存 ─────────────────────────────────────
         self._terrain_cache_surface: Optional[pygame.Surface] = None  # 地形+网格静态缓存
-        self._font = pygame.font.Font(None, 14)  # 预创建字体，避免每帧分配
+        self._font = _create_font(14)  # 预创建字体（支持中文），避免每帧分配
         self._rgb_friendly = _hex_to_rgb(COLOR_FRIENDLY)  # 预计算 RGB
         self._rgb_enemy = _hex_to_rgb(COLOR_ENEMY)
 
@@ -189,6 +221,7 @@ class MapWidget:
 
         # ── 预加载图片 ────────────────────────────────────────────
         self._load_tile_images()
+        self._load_unit_images()
 
     # ── 属性 ────────────────────────────────────────────────────────
 
@@ -244,16 +277,13 @@ class MapWidget:
     def load_map_from_json(self, filepath: str = DEFAULT_MAP_FILE) -> bool:
         """从 JSON 文件加载地图数据。
 
-        在 #2 的 IMap 实现就绪之前，此方法直接读取 JSON 作为数据源。
-        Sprint 2 仍保留此方法作为独立运行模式的后备。
-
         Args:
             filepath: 地图 JSON 文件路径
 
         Returns:
             True 如果加载成功
         """
-        path = Path(filepath)
+        path = _get_base_path() / filepath
         if not path.exists():
             logger.error("地图文件不存在: %s", path)
             return False
@@ -480,7 +510,7 @@ class MapWidget:
 
     def _load_tile_images(self) -> None:
         """预加载地形图片到缓存。素材缺失时缓存 None（运行时降级纯色）。"""
-        assets_path = Path(ASSETS_DIR) / "terrain"
+        assets_path = _get_base_path() / ASSETS_DIR / "terrain"
         for terrain_type, filename in TERRAIN_IMAGE_FILES.items():
             filepath = assets_path / filename
             if filepath.exists():
@@ -497,6 +527,23 @@ class MapWidget:
                 self._tile_image_cache[terrain_type] = None
 
         self._images_loaded = True
+
+    def _load_unit_images(self) -> None:
+        """预加载单位图片到缓存。文件名格式: {unit_type}_{color}.png。"""
+        assets_path = _get_base_path() / ASSETS_DIR / "units"
+        for unit_type in ("infantry", "cavalry", "artillery", "scout", "hq"):
+            for color in ("blue", "red"):
+                key = f"{unit_type}_{color}"
+                filepath = assets_path / f"{key}.png"
+                if filepath.exists():
+                    try:
+                        img = pygame.image.load(str(filepath))
+                        img = pygame.transform.scale(img, (self._tile_size - 4, self._tile_size - 4))
+                        self._unit_image_cache[key] = img
+                    except pygame.error as e:
+                        logger.warning("单位图片加载失败: %s — %s", filepath, e)
+                else:
+                    logger.debug("单位图片不存在: %s", filepath)
 
     # ── 私有方法：渲染层 ─────────────────────────────────────────────
 
@@ -649,8 +696,15 @@ class MapWidget:
                 self._tile_size - 4, self._tile_size - 4,
             )
 
-            if alpha < 255:
-                # 半透明渲染需要单独 Surface
+            # ── 优先使用单位图片，无图片时降级纯色方块 ────────────
+            img_key = f"{unit.unit_type.value.lower()}_{'blue' if is_friendly else 'red'}"
+            unit_img = self._unit_image_cache.get(img_key)
+
+            if unit_img is not None:
+                if alpha < 255:
+                    unit_img.set_alpha(alpha)
+                self._map_surface.blit(unit_img, unit_rect.topleft)
+            elif alpha < 255:
                 unit_overlay = pygame.Surface(
                     (unit_rect.width, unit_rect.height), pygame.SRCALPHA
                 )
@@ -684,7 +738,17 @@ class MapWidget:
                 x + 2, y + 2,
                 self._tile_size - 4, self._tile_size - 4,
             )
-            pygame.draw.rect(self._map_surface, color, unit_rect, border_radius=4)
+
+            # ── 优先使用单位图片 ──────────────────────────────────
+            unit_type = unit.get("unit_type", "?").lower()
+            color_name = "blue" if faction == "FRIENDLY" else "red"
+            img_key = f"{unit_type}_{color_name}"
+            unit_img = self._unit_image_cache.get(img_key)
+
+            if unit_img is not None:
+                self._map_surface.blit(unit_img, unit_rect.topleft)
+            else:
+                pygame.draw.rect(self._map_surface, color, unit_rect, border_radius=4)
 
             # 兵种简写标签
             unit_type_str = unit.get("unit_type", "?")

@@ -31,6 +31,37 @@ from src.core.constants import (
 
 logger = logging.getLogger(__name__)
 
+
+# ── 字体辅助 ──────────────────────────────────────────────────────────
+
+def _create_font(size: int) -> pygame.font.Font:
+    """创建字体。优先系统字体绝对路径 → 捆绑字体 → 默认字体。"""
+    import os as _os
+    import sys as _sys
+    from pathlib import Path as _Path
+    # 1) 系统字体目录
+    _fonts_dir = _os.environ.get("WINDIR", "C:/Windows") + "/Fonts"
+    for _name in ("msyh.ttc", "msyh.ttf", "simkai.ttf", "simsun.ttc"):
+        _fp = _os.path.join(_fonts_dir, _name)
+        if _os.path.exists(_fp):
+            try:
+                return pygame.font.Font(_fp, size)
+            except Exception:
+                continue
+    # 2) 捆绑字体
+    if getattr(_sys, "frozen", False):
+        _base = _Path(_sys._MEIPASS)
+    else:
+        _base = _Path(__file__).resolve().parent.parent.parent
+    _bundled = _base / "data" / "chinese.ttf"
+    if _bundled.exists():
+        try:
+            return pygame.font.Font(str(_bundled), size)
+        except Exception:
+            pass
+    return pygame.font.Font(None, size)
+
+
 # ── 标记颜色映射 ──────────────────────────────────────────────────────
 
 MARKER_COLORS: dict[MarkerType, str] = {
@@ -159,7 +190,7 @@ class MarkerSystem:
         self._palette_dirty: bool = True
 
         # ── Sprint 3: 性能缓存 ────────────────────────────────────
-        self._font = pygame.font.Font(None, 14)  # 预创建字体，避免每帧分配
+        self._font = _create_font(14)  # 预创建字体（支持中文），避免每帧分配
 
         # ── Sprint 3: 动画状态 ────────────────────────────────────
         # 放置弹入动画: (marker_type, coord, start_ms, duration_ms)

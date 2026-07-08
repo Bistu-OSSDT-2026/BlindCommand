@@ -1,6 +1,12 @@
 {
     "_comment": "BlindCommand pygame_gui 暗色主题 — Sprint 3",
     "defaults": {
+        "font": {
+            "name": "chinese.ttf",
+            "size": "14",
+            "bold": "0",
+            "italic": "0"
+        },
         "colours": {
             "normal_bg": "#2A2A2A",
             "hovered_bg": "#3A3A3A",

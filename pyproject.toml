@@ -1,6 +1,6 @@
 [project]
 name = "BlindCommand"
-version = "0.1.0"
+version = "1.0.0"
 description = "盲棋指挥 — 以信息不对称为核心的即时战术指挥游戏"
 readme = "README"
 license = { text = "MIT" }
@@ -10,7 +10,7 @@ authors = [
 ]
 keywords = ["game", "strategy", "fog-of-war", "tactical"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.11",
     "Topic :: Games/Entertainment :: Real Time Strategy",
@@ -123,4 +123,12 @@ name                 = "BlindCommand"
 add_data             = [
     "src/ui/assets:src/ui/assets",
     "data:data",
+]
+hiddenimports        = [
+    "pygame",
+    "pygame._freetype",
+    "pygame.mixer",
+    "pygame.font",
+    "pygame_gui.core",
+    "pygame_gui.elements",
 ]
