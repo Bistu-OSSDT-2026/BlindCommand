@@ -46,7 +46,6 @@ from src.core.constants import (
     CommandSentPayload,
     EnemySpottedPayload,
     HqCapturedPayload,
-    TerrainType,
 )
 from src.core.event_bus import event_bus
 from src.core.interfaces import ICommand, ICommander, IGameState, IMap, IRangeQuery, IUnit
@@ -55,6 +54,12 @@ logger = logging.getLogger(__name__)
 
 # 战斗结算回调类型： (attacker, defender, current_turn) -> result_payload | None
 CombatResolver = Callable[[IUnit, IUnit, int], Any]
+
+# ── 指令机制内部常量 ──────────────────────────────────────────────────
+
+_HOLD_DEFENSE_BONUS: int = 1        # HOLD 驻守时临时防御加成
+_SCOUT_VISION_BONUS: int = 2        # SCOUT 侦察时视野临时扩大的格数
+_RETREAT_SPEED_BONUS: int = 2       # RETREAT 撤退时额外移动格数
 
 
 # ============================================================================
@@ -177,6 +182,8 @@ class Commander(ICommander):
         self._capture_progress: dict[str, int] = {}
         # 上一回合各单位的位置（用于检测是否被打断）
         self._last_positions: dict[str, Coordinate] = {}
+        # 上一回合各单位的 HP（用于检测占领是否被攻击打断）
+        self._last_hp: dict[str, int] = {}
         # PATROL 状态：unit_id → {"path": [...], "index": int, "forward": bool}
         self._patrol_state: dict[str, dict] = {}
         # HOLD 中的单位集合（用于防御加成管理）
@@ -329,9 +336,10 @@ class Commander(ICommander):
             if not unit.is_alive:
                 self.cancel_all_commands(unit.unit_id)
 
-        # 更新位置快照（用于下回合打断检测）
+        # 更新位置和 HP 快照（用于下回合占领打断检测）
         for u in self._unit_manager.get_alive_units():
             self._last_positions[u.unit_id] = u.position
+            self._last_hp[u.unit_id] = u.current_hp
 
         return executed
 
@@ -356,9 +364,13 @@ class Commander(ICommander):
         """
         pending = self._queue.get_pending_for_unit(unit_id)
         self._queue.cancel_for_unit(unit_id)
-        # 清除占领与巡逻状态
+        # 清除占领、巡逻、驻守状态
         self._capture_progress.pop(unit_id, None)
         self._patrol_state.pop(unit_id, None)
+        self._hold_units.discard(unit_id)
+        # 清除死单位的位置/HP 快照（避免内存泄漏）
+        self._last_positions.pop(unit_id, None)
+        self._last_hp.pop(unit_id, None)
         if pending:
             event_bus.emit(GameEventType.COMMAND_EXPIRED, None)
             logger.info("已取消 %s 的 %d 条待执行指令", unit_id, len(pending))
@@ -513,7 +525,7 @@ class Commander(ICommander):
         if hasattr(unit, 'terrain_defense_bonus'):
             game_map = game_state.get_map()
             base_bonus = game_map.get_defense_bonus(unit.position)
-            unit.terrain_defense_bonus = base_bonus + 1
+            unit.terrain_defense_bonus = base_bonus + _HOLD_DEFENSE_BONUS
             self._hold_units.add(unit.unit_id)
 
         return False  # 持续指令
@@ -534,7 +546,7 @@ class Commander(ICommander):
         rq = game_state.get_range_query()
 
         # 侦察时视野临时 +2
-        scout_vision = unit.vision_range + 2
+        scout_vision = unit.vision_range + _SCOUT_VISION_BONUS
 
         dx, dy = direction.value
         steps = unit.speed
@@ -592,7 +604,7 @@ class Commander(ICommander):
         game_map = game_state.get_map()
         start_pos = unit.position
         dx, dy = direction.value
-        steps = unit.speed + 2
+        steps = unit.speed + _RETREAT_SPEED_BONUS
 
         # 记录旧位置并移除占用（后续直接设坐标，不经过 move_unit）
         game_map.remove_unit(unit)
@@ -676,17 +688,23 @@ class Commander(ICommander):
             return True  # 指令完成，但未占领
 
         # 阶段 4：占领倒计时
-        # 检测是否被打断（位置改变或受到攻击）
+        # 检测是否被打断（位置改变或受到攻击导致 HP 下降）
         prev_pos = self._last_positions.get(unit.unit_id)
-        interrupted = (
-            CAPTURE_INTERRUPTIBLE
-            and prev_pos is not None
+        prev_hp = self._last_hp.get(unit.unit_id)
+        position_changed = (
+            prev_pos is not None
             and prev_pos != unit.position
         )
+        hp_decreased = (
+            prev_hp is not None
+            and unit.current_hp < prev_hp
+        )
+        interrupted = CAPTURE_INTERRUPTIBLE and (position_changed or hp_decreased)
 
         if interrupted:
             self._capture_progress[unit.unit_id] = 0
-            logger.info("CAPTURE: %s 占领被打断，重置计数", unit.name)
+            logger.info("CAPTURE: %s 占领被打断（位置变化=%s HP下降=%s），重置计数",
+                        unit.name, position_changed, hp_decreased)
 
         # 累计回合
         progress = self._capture_progress.get(unit.unit_id, 0) + 1
@@ -835,9 +853,14 @@ class Commander(ICommander):
     def _set_unit_position(unit: IUnit, coord: Coordinate) -> None:
         """更新单位坐标（绕过 move_to 的路径验证）。
 
-        通过 Unit.move_to 直接设坐标（Unit 类是简易 teleport 实现）。
+        通过 UnitBase.set_position 直接设坐标（Commander 已自行处理
+        game_map.move_unit 的地图占用更新，只需同步单位内部坐标）。
         """
-        unit.move_to(coord)
+        if hasattr(unit, 'set_position'):
+            unit.set_position(coord)
+        else:
+            # 回退：旧版 Unit 类的 move_to 是简易 teleport
+            unit.move_to(coord)
 
 
 # ============================================================================
