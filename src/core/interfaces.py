@@ -250,7 +250,8 @@ class IMap(ABC):
 
     @abstractmethod
     def find_path(
-        self, start: Coordinate, end: Coordinate, max_steps: int
+        self, start: Coordinate, end: Coordinate, max_steps: int,
+        faction: Optional[Faction] = None,
     ) -> list[Coordinate]:
         """A* 寻路。
 
@@ -258,6 +259,7 @@ class IMap(ABC):
             start: 起点
             end: 终点
             max_steps: 最大步数（受单位 speed 限制）
+            faction: 可选，移动单位所属阵营（用于过滤敌军占据格，防止穿过敌方单位）
 
         Returns:
             路径坐标列表（含起点和终点），若不可达返回空列表
@@ -369,6 +371,11 @@ class IFogOfWar(ABC):
 
         由 GameLoop 在实际 emit POSITION_REPORT 后调用。
         """
+        ...
+
+    @abstractmethod
+    def remove_report_schedule(self, unit_id: str) -> None:
+        """移除单位的汇报调度条目（阵亡/注销时调用，幂等）。"""
         ...
 
 

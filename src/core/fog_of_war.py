@@ -177,6 +177,10 @@ class FogOfWar(IFogOfWar):
             current_turn + self._random_interval()
         )
 
+    def remove_report_schedule(self, unit_id: str) -> None:
+        """移除单位的汇报调度条目（阵亡/注销时调用）。"""
+        self._next_report_turn.pop(unit_id, None)
+
     # ── 内部辅助 ──────────────────────────────────────────────────────
 
     def _terrain_vision_mod(self, coord: Coordinate) -> int:

@@ -381,17 +381,17 @@ class GameMap(IMap):
     # ── 内部辅助 ──────────────────────────────────────────────────────
 
     def _is_occupied_by_enemy(self, coord: Coordinate, faction: Faction) -> bool:
-        """检查格子是否被敌军占据（阻止移动）。
+        """检查格子是否被敌方单位占据（阻止移动）。
 
         HQ 格允许双占时，若仅有敌方 HQ 单位占据则允许进入（围攻/占领）。
-        否则任何敌方单位占据均视为阻塞。
+        同时阻止同阵营非 HQ 单位双占（普通格一格一单位，invariant INV-4 修订版）。
 
         Args:
             coord: 待检查坐标
             faction: 移动单位所属阵营
 
         Returns:
-            True 若格子被敌军阻塞
+            True 若格子被阻塞（敌军占据 或 同阵营非HQ双占）
         """
         occupants = self._occupancy.get(coord, [])
         if not occupants:
@@ -402,6 +402,10 @@ class GameMap(IMap):
                 if self._allow_stacking_on_hq and o.is_hq:
                     continue
                 return True
+            else:
+                # 同阵营单位 — 普通格不可双占
+                if not o.is_hq:
+                    return True
         return False
 
     def _try_occupy(self, unit: IUnit, coord: Coordinate) -> bool:

@@ -161,17 +161,22 @@ class GameLoop(IGameLoop, IGameState):
         for faction_key, faction in [("friendly_units", Faction.FRIENDLY),
                                       ("enemy_units", Faction.ENEMY)]:
             for cfg in data.get(faction_key, []):
-                ut = UnitType(cfg["unit_type"])
-                stats = UNIT_STATS[ut]
-                unit = UnitBase(
-                    unit_id=cfg["unit_id"],
-                    name=cfg["name"],
-                    faction=faction,
-                    unit_type=ut,
-                    position=Coordinate(cfg["start_x"], cfg["start_y"]),
-                    stats=stats,
-                    game_map=game_map,
-                )
+                try:
+                    ut = UnitType(cfg["unit_type"])
+                    stats = UNIT_STATS[ut]
+                    unit = UnitBase(
+                        unit_id=cfg["unit_id"],
+                        name=cfg["name"],
+                        faction=faction,
+                        unit_type=ut,
+                        position=Coordinate(cfg["start_x"], cfg["start_y"]),
+                        stats=stats,
+                        game_map=game_map,
+                    )
+                except KeyError as e:
+                    raise ValueError(
+                        f"地图文件 {map_path} 中单位配置缺少必要字段: {e}"
+                    ) from e
                 if not game_map.place_unit(unit, unit.position):
                     logger.warning(
                         "from_map_file: 无法将单位 %s 放置到 %s，跳过该单位",
@@ -310,7 +315,10 @@ class GameLoop(IGameLoop, IGameState):
     # ── IGameState：只读查询 ───────────────────────────────────────────
 
     def get_unit_by_id(self, unit_id: str) -> Optional[IUnit]:
-        return self._units.get(unit_id)
+        unit = self._units.get(unit_id)
+        if unit is not None and not unit.is_alive:
+            return None  # 不返回已阵亡单位
+        return unit
 
     def get_map(self) -> IMap:
         return self._map
@@ -398,7 +406,7 @@ class GameLoop(IGameLoop, IGameState):
 
         # 清理迷雾系统的汇报调度条目
         if unit.faction == Faction.FRIENDLY:
-            self._fog._next_report_turn.pop(unit_id, None)
+            self._fog.remove_report_schedule(unit_id)
 
         logger.debug("注销单位: %s (%s)", unit.unit_id, unit.name)
         return unit
@@ -412,7 +420,7 @@ class GameLoop(IGameLoop, IGameState):
     def _cleanup_dead_units(self) -> None:
         """移除地图上已阵亡单位的占用，取消其指令队列。
 
-        Sprint 3: 同时清理 _spotted_enemies 中已阵亡敌军的条目（EDGE-G3）。
+        Sprint 3: 同时清理 _spotted_enemies 和 FogOfWar 汇报调度条目。
         """
         for u in list(self._units.values()):
             if not u.is_alive:
@@ -421,6 +429,9 @@ class GameLoop(IGameLoop, IGameState):
                     self._commander.cancel_all_commands(u.unit_id)
                 # Sprint 3: 清理已阵亡单位的追踪条目
                 self._spotted_enemies.discard(u.unit_id)
+                # Sprint 3: 清理 FogOfWar 汇报调度
+                if u.faction == Faction.FRIENDLY:
+                    self._fog.remove_report_schedule(u.unit_id)
 
     # ── 内部：阶段 4 敌情检测 ─────────────────────────────────────────
 
@@ -514,6 +525,9 @@ class GameLoop(IGameLoop, IGameState):
         captured_location = Coordinate(*payload.hq_location)
         friendly_hq = self._map.get_faction_hq_location(Faction.FRIENDLY)
         enemy_hq = self._map.get_faction_hq_location(Faction.ENEMY)
+        if friendly_hq is None or enemy_hq is None:
+            logger.warning("HQ_CAPTURED: 地图未设置 HQ 坐标，忽略事件")
+            return
         if captured_location != friendly_hq and captured_location != enemy_hq:
             logger.warning(
                 "HQ_CAPTURED 事件坐标 %s 与任一 HQ 坐标（友: %s, 敌: %s）不匹配，忽略",

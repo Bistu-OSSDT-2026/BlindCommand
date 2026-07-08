@@ -249,13 +249,14 @@ class UnitBase(IUnit):
         if self._position == target:
             return True
 
-        path = self._game_map.find_path(self._position, target, self._speed)
+        path = self._game_map.find_path(self._position, target, self._speed, self._faction)
         if not path or path[-1] != target:
             # 不可达 或 步数不够（全或无，不部分移动）
             return False
 
         if self._game_map.move_unit(self, self._position, target):
             self._position = target
+            self._terrain_defense_explicitly_set = False  # 移动后地形防御需重新查询
             return True
         return False
 
