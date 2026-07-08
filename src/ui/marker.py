@@ -31,6 +31,19 @@ from src.core.constants import (
 
 logger = logging.getLogger(__name__)
 
+
+# ── 字体辅助 ──────────────────────────────────────────────────────────
+
+def _create_font(size: int) -> pygame.font.Font:
+    """创建支持中文的字体。依次尝试常见中文字体，回退默认字体。"""
+    for name in ("Microsoft YaHei", "SimHei", "Noto Sans SC", "WenQuanYi Micro Hei"):
+        try:
+            return pygame.font.SysFont(name, size)
+        except Exception:
+            continue
+    return pygame.font.Font(None, size)
+
+
 # ── 标记颜色映射 ──────────────────────────────────────────────────────
 
 MARKER_COLORS: dict[MarkerType, str] = {
@@ -159,7 +172,7 @@ class MarkerSystem:
         self._palette_dirty: bool = True
 
         # ── Sprint 3: 性能缓存 ────────────────────────────────────
-        self._font = pygame.font.Font(None, 14)  # 预创建字体，避免每帧分配
+        self._font = _create_font(14)  # 预创建字体（支持中文），避免每帧分配
 
         # ── Sprint 3: 动画状态 ────────────────────────────────────
         # 放置弹入动画: (marker_type, coord, start_ms, duration_ms)

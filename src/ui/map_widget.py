@@ -42,6 +42,16 @@ def _get_base_path() -> Path:
         return Path(sys._MEIPASS)
     return Path(__file__).resolve().parent.parent.parent
 
+
+def _create_font(size: int) -> pygame.font.Font:
+    """创建支持中文的字体。依次尝试常见中文字体，回退默认字体。"""
+    for name in ("Microsoft YaHei", "SimHei", "Noto Sans SC", "WenQuanYi Micro Hei"):
+        try:
+            return pygame.font.SysFont(name, size)
+        except Exception:
+            continue
+    return pygame.font.Font(None, size)
+
 from src.core.constants import (
     ASSETS_DIR,
     COLOR_ENEMY,
@@ -177,7 +187,7 @@ class MapWidget:
 
         # ── Sprint 3: 性能缓存 ─────────────────────────────────────
         self._terrain_cache_surface: Optional[pygame.Surface] = None  # 地形+网格静态缓存
-        self._font = pygame.font.Font(None, 14)  # 预创建字体，避免每帧分配
+        self._font = _create_font(14)  # 预创建字体（支持中文），避免每帧分配
         self._rgb_friendly = _hex_to_rgb(COLOR_FRIENDLY)  # 预计算 RGB
         self._rgb_enemy = _hex_to_rgb(COLOR_ENEMY)
 
