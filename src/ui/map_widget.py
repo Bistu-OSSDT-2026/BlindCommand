@@ -44,22 +44,24 @@ def _get_base_path() -> Path:
 
 
 def _create_font(size: int) -> pygame.font.Font:
-    """创建字体。优先捆绑中文字体 → 系统中文字体 → 默认字体。"""
+    """创建字体。优先系统字体绝对路径 → 捆绑字体 → 默认字体。"""
+    # 扫描系统字体目录（PyInstaller 中 SDL 搜索失效，直接路径仍可用）
+    import os as _os
+    _fonts_dir = _os.environ.get("WINDIR", "C:/Windows") + "/Fonts"
+    for _name in ("msyh.ttc", "msyh.ttf", "simkai.ttf", "simsun.ttc", "FZYTK.TTF"):
+        _fp = _os.path.join(_fonts_dir, _name)
+        if _os.path.exists(_fp):
+            try:
+                return pygame.font.Font(_fp, size)
+            except Exception:
+                continue
     # 捆绑字体
-    bundled = _get_base_path() / "src" / "ui" / "assets" / "fonts" / "chinese.ttf"
+    bundled = _get_base_path() / "data" / "chinese.ttf"
     if bundled.exists():
         try:
             return pygame.font.Font(str(bundled), size)
         except Exception:
             pass
-    # 系统中文字体
-    for name in ("microsoftyahei", "simhei", "notosanssc"):
-        path = pygame.font.match_font(name)
-        if path:
-            try:
-                return pygame.font.Font(path, size)
-            except Exception:
-                continue
     return pygame.font.Font(None, size)
 
 from src.core.constants import (

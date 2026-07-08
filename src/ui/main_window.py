@@ -62,6 +62,34 @@ COLOR_PANEL_BG = (26, 26, 26)    # 面板背景
 COLOR_BORDER   = (60, 60, 60)    # 分隔线
 
 
+def _find_cjk_font(base_dir: Path) -> str | None:
+    """查找可用中文字体。优先系统绝对路径（PyInstaller 中 SDL 搜索失效仍可用）。
+
+    Args:
+        base_dir: 项目根目录（用于定位捆绑字体）
+
+    Returns:
+        字体文件绝对路径，若未找到任何可用字体返回 None
+    """
+    import os as _os
+    # 1) 系统字体目录（SDL 无法搜索，但绝对路径仍可加载）
+    _fonts_dir = _os.environ.get("WINDIR", "C:/Windows") + "/Fonts"
+    for _name in ("msyh.ttc", "msyh.ttf", "simkai.ttf", "simsun.ttc"):
+        _fp = _os.path.join(_fonts_dir, _name)
+        if _os.path.exists(_fp):
+            return _fp
+    # 2) 捆绑字体
+    _bundled = base_dir / "data" / "chinese.ttf"
+    if _bundled.exists():
+        return str(_bundled)
+    # 3) SDL 搜索（开发环境）
+    for _name in ("microsoftyahei", "simhei"):
+        _path = pygame.font.match_font(_name)
+        if _path:
+            return _path
+    return None
+
+
 class MainWindow:
     """游戏主窗口。
 
@@ -122,23 +150,33 @@ class MainWindow:
         self._running = True
         self._frame_count = 0
 
-        # ── 中文支持：加载捆绑字体 ─────────────────────────────
+        # ── 中文字体：优先系统绝对路径，回退捆绑字体 ───────────
         # PyInstaller onefile 兼容：_MEIPASS 是解压临时目录
         if getattr(sys, "frozen", False):
             _base_dir = Path(sys._MEIPASS)
         else:
             _base_dir = Path(__file__).resolve().parent.parent.parent
 
-        _font_path = _base_dir / "src" / "ui" / "assets" / "fonts" / "chinese.ttf"
-        if _font_path.exists():
-            _cjk_font = pygame.font.Font(str(_font_path), 14)
-            # 注册为 pygame 默认字体，pygame_gui 会自动拾取
-            logger.info("已加载中文字体: %s", _font_path)
+        _cjk_font_path = _find_cjk_font(_base_dir)
+        if _cjk_font_path:
+            logger.info("中文字体: %s", _cjk_font_path)
 
-        # ── pygame_gui 初始化 ────────────────────────────────────
+        # ── pygame_gui 初始化：注入字体路径到主题 ─────────────
+        import json as _json
+        import tempfile as _tempfile
+        _theme_src = _base_dir / "data" / "theme.json"
+        with open(_theme_src, "r", encoding="utf-8") as _f:
+            _theme = _json.load(_f)
+        if _cjk_font_path:
+            _theme.setdefault("defaults", {})["font"] = {
+                "name": _cjk_font_path, "size": "14", "bold": "0", "italic": "0"
+            }
+        _tmp = _tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8")
+        _json.dump(_theme, _tmp)
+        _tmp.close()
         self._ui_manager = pygame_gui.UIManager(
             (WINDOW_WIDTH, WINDOW_HEIGHT),
-            theme_path=str(_base_dir / "data" / "theme.json"),
+            theme_path=_tmp.name,
         )
 
         # ── 布局计算 ─────────────────────────────────────────────

@@ -35,27 +35,30 @@ logger = logging.getLogger(__name__)
 # ── 字体辅助 ──────────────────────────────────────────────────────────
 
 def _create_font(size: int) -> pygame.font.Font:
-    """创建字体。优先捆绑中文字体 → 系统中文字体 → 默认字体。"""
-    import sys
-    from pathlib import Path
-    if getattr(sys, "frozen", False):
-        base = Path(sys._MEIPASS)
-    else:
-        base = Path(__file__).resolve().parent.parent.parent
-    bundled = base / "src" / "ui" / "assets" / "fonts" / "chinese.ttf"
-    if bundled.exists():
-        try:
-            return pygame.font.Font(str(bundled), size)
-        except Exception:
-            pass
-    # 系统中文字体
-    for name in ("microsoftyahei", "simhei", "notosanssc"):
-        path = pygame.font.match_font(name)
-        if path:
+    """创建字体。优先系统字体绝对路径 → 捆绑字体 → 默认字体。"""
+    import os as _os
+    import sys as _sys
+    from pathlib import Path as _Path
+    # 1) 系统字体目录
+    _fonts_dir = _os.environ.get("WINDIR", "C:/Windows") + "/Fonts"
+    for _name in ("msyh.ttc", "msyh.ttf", "simkai.ttf", "simsun.ttc"):
+        _fp = _os.path.join(_fonts_dir, _name)
+        if _os.path.exists(_fp):
             try:
-                return pygame.font.Font(path, size)
+                return pygame.font.Font(_fp, size)
             except Exception:
                 continue
+    # 2) 捆绑字体
+    if getattr(_sys, "frozen", False):
+        _base = _Path(_sys._MEIPASS)
+    else:
+        _base = _Path(__file__).resolve().parent.parent.parent
+    _bundled = _base / "data" / "chinese.ttf"
+    if _bundled.exists():
+        try:
+            return pygame.font.Font(str(_bundled), size)
+        except Exception:
+            pass
     return pygame.font.Font(None, size)
 
 
