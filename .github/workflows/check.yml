@@ -31,11 +31,15 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
 
+      # ── 代码风格 ──────────────────────────────────────────────────────
+
       - name: Black (format check)
         run: black --check --line-length=100 src/ tests/
 
       - name: isort (import order check)
         run: isort --check-only --profile=black --line-length=100 src/ tests/
+
+      # ── 静态检查 ──────────────────────────────────────────────────────
 
       - name: Ruff (lint)
         run: ruff check src/ tests/
@@ -43,5 +47,51 @@ jobs:
       - name: Mypy (type check)
         run: mypy src/ --strict
 
+      # ── 测试 ──────────────────────────────────────────────────────────
+
       - name: Pytest (unit tests)
         run: pytest tests/ -v --tb=short
+
+      # ── 数据文件校验 ──────────────────────────────────────────────────
+
+      - name: Validate JSON data files
+        run: |
+          python -c "
+          import json, sys
+          errors = []
+          files = ['data/unit_config.json', 'data/maps/map_01.json']
+          for fp in files:
+              try:
+                  with open(fp) as f:
+                      json.load(f)
+                  print(f'  OK  {fp}')
+              except Exception as e:
+                  errors.append(f'{fp}: {e}')
+          if errors:
+              print('FAILED:', file=sys.stderr)
+              for e in errors:
+                  print(f'  {e}', file=sys.stderr)
+              sys.exit(1)
+          print('All JSON data files valid.')
+          "
+
+      # ── 素材完整性检查 ────────────────────────────────────────────────
+
+      - name: Verify asset files exist
+        run: |
+          missing=0
+          for terrain in plain forest mountain river hq bridge; do
+              f="src/ui/assets/terrain/${terrain}.png"
+              if [ -f "$f" ]; then echo "  OK  $f"; else echo "  MISS $f"; missing=$((missing+1)); fi
+          done
+          for unit in infantry cavalry artillery scout hq; do
+              for color in blue red; do
+                  f="src/ui/assets/units/${unit}_${color}.png"
+                  if [ -f "$f" ]; then echo "  OK  $f"; else echo "  MISS $f"; missing=$((missing+1)); fi
+              done
+          done
+          if [ $missing -gt 0 ]; then
+              echo "ERROR: $missing asset file(s) missing (total required: 16)"
+              exit 1
+          fi
+          echo "All 16 asset files present."
