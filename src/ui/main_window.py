@@ -195,9 +195,10 @@ class MainWindow:
             else:
                 logger.info("BattleLogPanel 已订阅 EventBus（独立模式，等待 #3 事件）")
 
-        # ── Sprint 2：订阅 TURN_START 以同步回合数到战报 ────────
+        # ── Sprint 2：订阅 TURN_START/TURN_END 以同步回合和迷雾 ──
         self._turn_counter = 0
         event_bus.subscribe(GameEventType.TURN_START, self._on_turn_start)
+        event_bus.subscribe(GameEventType.TURN_END, self._on_turn_end)
 
         logger.info(
             "MainWindow 初始化完成 (%d×%d) mode=%s",
@@ -369,6 +370,7 @@ class MainWindow:
         self.battle_log.unsubscribe_all()
         self.fog_renderer.unsubscribe_events()
         event_bus.unsubscribe(GameEventType.TURN_START, self._on_turn_start)
+        event_bus.unsubscribe(GameEventType.TURN_END, self._on_turn_end)
         pygame.quit()
 
     # ── 事件回调 ──────────────────────────────────────────────────
@@ -381,6 +383,14 @@ class MainWindow:
         """
         self._turn_counter += 1
         self.battle_log.set_turn(self._turn_counter)
+
+    def _on_turn_end(self, _payload: object = None) -> None:
+        """TURN_END 事件回调：驱逐迷雾高亮区域过期。
+
+        FogRenderer 的高亮区域有 remaining_turns 生命周期，
+        每个 TURN_END 事件递减一次，3 回合后自动清除。
+        """
+        self.fog_renderer.on_turn_end()
 
     # ── 静态方法 ──────────────────────────────────────────────────
 
