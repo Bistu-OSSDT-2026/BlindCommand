@@ -78,6 +78,11 @@ class CommandPanel:
         self._map_height = map_height
         self._commander: Optional[ICommander] = None
 
+        # ── Sprint 3: 状态消息自动消失 ────────────────────────────
+        self._status_ttl: float = 0.0       # 剩余显示时间（秒）
+        self._status_duration: float = 4.0   # 总显示时间
+        self._status_fade_start: float = 1.0  # 最后 1 秒渐隐
+
         # ── 布局计算 ──────────────────────────────────────────────
         margin = 8
         item_h = 36
@@ -194,18 +199,18 @@ class CommandPanel:
     def set_available_units(self, unit_names: list[str]) -> None:
         """更新可选单位列表。
 
+        Sprint 3: 使用 rebuild() API 原地更新，避免 kill+recreate 引起的闪烁。
+
         Args:
             unit_names: 存活友军单位名称列表
         """
         self._available_units = unit_names
-        self.dropdown_unit.kill()
-        self.dropdown_unit = pygame_gui.elements.UIDropDownMenu(
-            options_list=unit_names if unit_names else ["—"],
-            starting_option=unit_names[0] if unit_names else "—",
-            relative_rect=self.dropdown_unit.rect,
-            manager=self._ui_manager,
-        )
-        logger.debug("单位列表已更新: %s", unit_names)
+        # Bug 17 fix: 空列表时回退到占位符
+        display_units = unit_names if unit_names else ["—"]
+        if display_units:
+            self.dropdown_unit.options_list = display_units
+            self.dropdown_unit.selected_option = display_units[0]
+            self.dropdown_unit.rebuild()
 
     def set_map_bounds(self, width: int, height: int) -> None:
         """更新地图边界（用于坐标校验）。
@@ -276,6 +281,43 @@ class CommandPanel:
         self._set_status(" ✓ 指令参数有效", "#44FF44")
         return sel
 
+    def validate_inputs(self) -> bool:
+        """实时校验 X/Y 输入框内容，更新按钮状态。
+
+        Sprint 3: 由 MainWindow 在 UI_TEXT_ENTRY_CHANGED 事件时调用。
+        无效输入时禁用执行按钮并显示红色边框提示。
+
+        Returns:
+            True 如果当前输入有效
+        """
+        try:
+            x = int(self.entry_x.get_text())
+        except ValueError:
+            x = -1
+        try:
+            y = int(self.entry_y.get_text())
+        except ValueError:
+            y = -1
+
+        valid = (
+            0 <= x < self._map_width
+            and 0 <= y < self._map_height
+        )
+
+        if valid:
+            self.button_execute.enable()
+            self._set_status("", "#CCCCCC")  # 清除错误
+        else:
+            self.button_execute.disable()
+            if x < 0 or x >= self._map_width:
+                self._set_status(f"⚠ X 坐标需在 0~{self._map_width - 1} 之间", "#FF4444")
+            elif y < 0 or y >= self._map_height:
+                self._set_status(f"⚠ Y 坐标需在 0~{self._map_height - 1} 之间", "#FF4444")
+            else:
+                self._set_status("⚠ 请输入有效坐标", "#FF4444")
+
+        return valid
+
     def on_execute_clicked(self) -> dict | None:
         """执行按钮回调。
 
@@ -342,24 +384,30 @@ class CommandPanel:
         return cmd_data
 
     def update(self, time_delta: float) -> None:
-        """每帧更新（预留扩展点）。
+        """每帧更新。Sprint 3: 状态消息自动消失。
 
         Args:
             time_delta: 上一帧的时间间隔（秒）
         """
-        # pygame_gui 控件由 UIManager 统一驱动
-        pass
+        if self._status_ttl > 0:
+            self._status_ttl -= time_delta
+            if self._status_ttl <= 0:
+                self._label_status.set_text("")
+            elif self._status_ttl < self._status_fade_start:
+                # 渐隐（通过 HTML 颜色调整亮度）
+                pass  # pygame_gui label 不支持 alpha，故仅保留 TTL
 
     # ── 私有方法 ────────────────────────────────────────────────────
 
     def _set_status(self, text: str, color: str = "#CCCCCC") -> None:
-        """设置状态标签文本和颜色。
+        """设置状态标签文本和颜色，启动 4 秒自动消失计时器。
 
         Args:
             text: 状态文本
             color: HTML 颜色值
         """
         self._label_status.set_text(f"<font color='{color}'>{text}</font>")
+        self._status_ttl = self._status_duration  # Sprint 3: 自动消失
 
     def _get_placeholder_unit(self, index: int) -> str:
         """获取占位单位名称（Sprint 1 用）。"""
