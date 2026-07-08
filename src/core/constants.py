@@ -102,6 +102,7 @@ class BattleOutcome(Enum):
     """单场战斗结果（用于战报措辞）"""
     DECISIVE_WIN = "DECISIVE_WIN"   # 大胜（友军 HP > 70%）
     PYRHHIC_WIN  = "PYRRHIC_WIN"    # 惨胜（友军 HP < 30%）
+    STALEMATE    = "STALEMATE"      # 胶着（双方均存活，HP 在 30%~70%）
     MUTUAL_KILL  = "MUTUAL_KILL"    # 同归于尽
     DECISIVE_LOSS = "DECISIVE_LOSS" # 大败
     ENEMY_ROUTED = "ENEMY_ROUTED"   # 敌方溃逃（敌军 HP < 20%）

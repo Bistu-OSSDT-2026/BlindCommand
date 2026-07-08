@@ -251,6 +251,17 @@ class UnitBase(IUnit):
             return True
         return False
 
+    def set_position(self, target: Coordinate) -> None:
+        """直接设置单位坐标（绕过寻路与地图占用更新）。
+
+        供 #3 Commander 在已自行处理 map.move_unit 后同步单位内部坐标。
+        普通移动应使用 move_to()。
+
+        Args:
+            target: 新坐标
+        """
+        self._position = target
+
     def attack_target(self, target: IUnit) -> int:
         """默认近战攻击（最小实现，对齐 CORE_SPEC.md C-2）。
 

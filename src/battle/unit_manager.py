@@ -16,6 +16,8 @@
 
 from __future__ import annotations
 
+import random
+
 from src.battle.units import HQ, Artillery, Cavalry, Infantry, Scout, Unit
 from src.core.constants import (
     FOG_POSITION_ERROR_RADIUS,
@@ -239,7 +241,6 @@ class UnitManager:
         # 计算汇报坐标（友军阵亡带误差，敌军精确）
         actual_pos = unit.position
         if unit.faction == Faction.FRIENDLY:
-            import random
             reported_x = actual_pos.x + random.randint(
                 -FOG_POSITION_ERROR_RADIUS, FOG_POSITION_ERROR_RADIUS
             )
@@ -289,14 +290,17 @@ class UnitManager:
             faction: 阵营
 
         Returns:
-            True 如果所有非 HQ 单位均已阵亡
+            True 如果存在至少一个非 HQ 单位且全部阵亡；
+            False 如果没有战斗单位（无法判定"全灭"）或有单位存活
         """
         combat_units = [
             u
             for u in self._units.values()
             if u.faction == faction and not u.is_hq
         ]
-        return all(not u.is_alive for u in combat_units) if combat_units else True
+        if not combat_units:
+            return False  # 没有战斗单位，不可判定为"全灭"
+        return all(not u.is_alive for u in combat_units)
 
     # ── HQ 相关 ───────────────────────────────────────────────────────────
 
