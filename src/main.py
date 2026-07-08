@@ -12,6 +12,8 @@ import logging
 import sys
 from pathlib import Path
 
+import pygame
+
 # 确保项目根目录在 sys.path 中
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -35,8 +37,14 @@ def main() -> None:
     logger.info("窗口尺寸: 1280×800, 30 FPS")
     logger.info("关闭窗口或按 ESC 退出, SPACE 打印调试信息")
 
-    window = MainWindow()
-    window.run()
+    # BUG-21 fix: catch pygame errors with a user-friendly message
+    try:
+        window = MainWindow()
+        window.run()
+    except pygame.error as e:
+        print(f"[错误] 游戏启动失败: {e}")
+        print("请确认已安装 pygame 并且显示环境可用。")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

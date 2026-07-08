@@ -19,12 +19,17 @@ from __future__ import annotations
 from typing import Callable, Optional
 
 from src.core.constants import Coordinate, Faction
-from src.core.interfaces import IRangeQuery, IUnit
+from src.core.interfaces import IMap, IRangeQuery, IUnit
 
 
 def _opposite_faction(faction: Faction) -> Faction:
     """返回对立阵营。"""
-    return Faction.ENEMY if faction == Faction.FRIENDLY else Faction.FRIENDLY
+    if faction == Faction.FRIENDLY:
+        return Faction.ENEMY
+    elif faction == Faction.ENEMY:
+        return Faction.FRIENDLY
+    else:
+        raise ValueError(f"未知阵营: {faction}")
 
 
 class RangeQuery(IRangeQuery):
@@ -38,15 +43,17 @@ class RangeQuery(IRangeQuery):
 
     def __init__(
         self,
-        game_map: object,                         # IMap 避免循环 import
+        game_map: IMap,
         units_provider: Callable[[], list[IUnit]],
     ) -> None:
         """构造范围检索器。
 
         Args:
-            game_map: 实现 IMap 的对象（传 object 避免 src.core 间循环 import）
+            game_map: 实现 IMap 的地图对象
             units_provider: 无参可调用，返回当前所有存活单位列表
         """
+        if units_provider is None:
+            raise ValueError("units_provider 不能为 None")
         self._map = game_map
         self._units_provider = units_provider
 
@@ -109,7 +116,9 @@ class RangeQuery(IRangeQuery):
         return enemies[0] if enemies else None
 
     def has_enemy_in_range(self, unit: IUnit, radius: int) -> bool:
-        """某单位指定范围内是否有敌人。
+        """某单位指定范围内是否有敌人（短路版本）。
+
+        发现第一个敌人即返回 True，避免全量扫描+排序。
 
         Args:
             unit: 查询单位
@@ -118,11 +127,14 @@ class RangeQuery(IRangeQuery):
         Returns:
             True 若范围内存活敌人 ≥ 1
         """
-        return bool(
-            self.get_units_in_range(
-                center=unit.position,
-                radius=radius,
-                faction=_opposite_faction(unit.faction),
-                exclude_ids={unit.unit_id},
-            )
-        )
+        target_faction = _opposite_faction(unit.faction)
+        for u in self._units_provider():
+            if not u.is_alive:
+                continue
+            if u.faction != target_faction:
+                continue
+            if u.unit_id == unit.unit_id:
+                continue
+            if unit.position.chebyshev_distance(u.position) <= radius:
+                return True
+        return False

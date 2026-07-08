@@ -31,7 +31,6 @@ from typing import TYPE_CHECKING, Optional
 import pygame
 
 from src.core.constants import (
-    ASSETS_DIR,
     COLOR_ENEMY,
     COLOR_FRIENDLY,
     DEFAULT_MAP_FILE,
@@ -43,7 +42,7 @@ from src.core.constants import (
 )
 
 if TYPE_CHECKING:
-    from src.core.interfaces import IFogOfWar, IGameLoop, IMap, IUnit
+    from src.core.interfaces import IFogOfWar, IGameLoop, IMap
     from src.ui.fog_renderer import FogRenderer
     from src.ui.marker import MarkerSystem
 
@@ -144,6 +143,9 @@ class MapWidget:
 
         # ── 预加载图片 ────────────────────────────────────────────
         self._load_tile_images()
+
+        # ── BUG-4 fix: font cache reused across _draw_centered_text calls ──
+        self._font = pygame.font.Font(None, 14)
 
     # ── 属性 ────────────────────────────────────────────────────────
 
@@ -313,6 +315,13 @@ class MapWidget:
 
     # ── 公开方法：坐标转换 ──────────────────────────────────────────
 
+    def get_map_offset(self) -> tuple[int, int]:
+        """返回地图在画布中的偏移量（供 MarkerSystem 等外部组件使用）。
+        
+        BUG-15 fix: public accessor replacing direct _map_offset access.
+        """
+        return self._map_offset
+
     def pixel_to_coord(self, px: int, py: int) -> Optional[Coordinate]:
         """像素坐标 → 地图坐标。
 
@@ -353,7 +362,10 @@ class MapWidget:
 
     def _load_tile_images(self) -> None:
         """预加载地形图片到缓存。素材缺失时缓存 None（运行时降级纯色）。"""
-        assets_path = Path(ASSETS_DIR) / "terrain"
+        # BUG-5 fix: resolve paths relative to this source file so they work
+        # from any working directory
+        _assets_dir = Path(__file__).resolve().parent / "assets"
+        assets_path = _assets_dir / "terrain"
         for terrain_type, filename in TERRAIN_IMAGE_FILES.items():
             filepath = assets_path / filename
             if filepath.exists():
@@ -462,13 +474,13 @@ class MapWidget:
             )
             pygame.draw.rect(self._map_surface, color, unit_rect, border_radius=4)
 
-            # 兵种简写标签
-            abbr = _get_unit_abbreviation(unit.unit_type.value)
-            self._draw_centered_text(abbr, x, y, (255, 255, 255))
-
-            # 阵亡标记
+            # BUG-6 fix: draw only cross for dead units, skip abbreviation
             if not unit.is_alive:
                 self._draw_centered_text("✕", x, y, (255, 0, 0))
+            else:
+                # 兵种简写标签
+                abbr = _get_unit_abbreviation(unit.unit_type.value)
+                self._draw_centered_text(abbr, x, y, (255, 255, 255))
 
     def _render_unit_layer_legacy(self) -> None:
         """Sprint 1 兼容：从 JSON 加载的单位列表渲染（无可见性过滤）。"""
@@ -510,8 +522,8 @@ class MapWidget:
         if self._map_surface is None:
             return
 
-        font = pygame.font.Font(None, 14)
-        text_surf = font.render(text, True, color)
+        # BUG-4 fix: use cached font instead of creating a new one every call
+        text_surf = self._font.render(text, True, color)
         text_rect = text_surf.get_rect(
             center=(
                 tile_x + self._tile_size // 2,

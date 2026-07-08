@@ -24,7 +24,6 @@ import pygame
 import pygame_gui
 
 from src.core.constants import (
-    COMMAND_PANEL_BG_COLOR,
     COMMAND_PANEL_HEIGHT,
     CommandType,
     MAP_DEFAULT_HEIGHT,
@@ -198,11 +197,14 @@ class CommandPanel:
             unit_names: 存活友军单位名称列表
         """
         self._available_units = unit_names
+        # BUG-12 fix: capture rect before kill, use explicit values for new dropdown
+        old_rect = self.dropdown_unit.rect
+        explicit_rect = pygame.Rect(old_rect.x, old_rect.y, old_rect.width, old_rect.height)
         self.dropdown_unit.kill()
         self.dropdown_unit = pygame_gui.elements.UIDropDownMenu(
             options_list=unit_names if unit_names else ["—"],
             starting_option=unit_names[0] if unit_names else "—",
-            relative_rect=self.dropdown_unit.rect,
+            relative_rect=explicit_rect,
             manager=self._ui_manager,
         )
         logger.debug("单位列表已更新: %s", unit_names)
@@ -298,12 +300,25 @@ class CommandPanel:
                 unit_name = cmd_data["unit"]
                 # 查找单位 ID（简化：直接使用名称匹配 — #3 应提供更好的匹配）
                 params: dict = {"x": cmd_data["x"], "y": cmd_data["y"]}
-                # 注：需要 unit_id 而非 name，此处为简化对接。
-                # #3 的 Commander 若能通过 name 查找，则此处可行；
-                # 否则需由 MainWindow 做 name→id 转换后调用。
+                # BUG-11 TODO: The commander expects unit_id like
+                # "friendly_infantry_01" but we're passing the display name
+                # (e.g. "第一步兵连").  The UI layer has no mapping from
+                # display name to unit_id.  This needs either:
+                #   a) IGameState.get_unit_by_name() lookup, or
+                #   b) #3's Commander to accept names directly.
+                # For now, keep passing the name as-is and document the gap.
+                # BUG-13 fix: guard against invalid command type string
+                try:
+                    cmd_type = CommandType(cmd_data["command"])
+                except ValueError:
+                    self._set_status(
+                        f" ⚠ 无效的指令类型: {cmd_data['command']}", "#FF4444"
+                    )
+                    logger.warning("无效的指令类型: %s", cmd_data["command"])
+                    return None
                 success = self._commander.issue_command(
                     unit_id=unit_name,  # Sprint 2 简化：用名称作为 ID
-                    command_type=CommandType(cmd_data["command"]),
+                    command_type=cmd_type,
                     params=params,
                 )
                 if success:

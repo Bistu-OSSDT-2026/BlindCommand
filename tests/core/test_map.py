@@ -13,8 +13,6 @@ from tempfile import NamedTemporaryFile
 import pytest
 
 from src.core.constants import (
-    MAP_MAX_SIZE,
-    MAP_MIN_SIZE,
     UNIT_STATS,
     Coordinate,
     Faction,
@@ -23,7 +21,6 @@ from src.core.constants import (
 )
 from src.core.map import GameMap
 from src.core.unit_base import UnitBase
-
 
 # ── 测试夹具 ──────────────────────────────────────────────────────────
 

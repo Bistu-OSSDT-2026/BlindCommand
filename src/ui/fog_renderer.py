@@ -150,6 +150,10 @@ class FogRenderer:
 
         对每个不可见格子绘制半透明黑色方块。
 
+        BUG-18 note: This fully redraws every frame which is acceptable for
+        the current map size (20×15 = 300 tiles).  For larger maps, the
+        fog overlay should be cached and only rebuilt when visibility changes.
+
         Args:
             surface: 目标 Surface（通常为 MapWidget 的 _map_surface）
         """
@@ -234,9 +238,8 @@ class FogRenderer:
 
     def on_turn_end(self) -> None:
         """回合结束时调用，减少汇报区域的剩余显示回合。"""
-        self._approx_zones = [
-            z for z in self._approx_zones if z.remaining_turns > 0
-        ]
+        # BUG-19 fix: removed redundant first filter pass — the second
+        # list comprehension already handles filtering after decrement.
         for z in self._approx_zones:
             z.remaining_turns -= 1
         # 过滤已过期
@@ -277,3 +280,15 @@ class FogRenderer:
     def unsubscribe_events(self) -> None:
         """取消事件订阅（清理时调用）。"""
         event_bus.unsubscribe(GameEventType.POSITION_REPORT, self._on_position_report)
+
+    def dispose(self) -> None:
+        """BUG-17 fix: guaranteed cleanup method.
+        
+        Calls unsubscribe_events() and releases cached surfaces.
+        Should be called when the FogRenderer is no longer needed.
+        """
+        self.unsubscribe_events()
+        self._fog_overlay = None
+        self._highlight_overlay = None
+        self._approx_zones.clear()
+        logger.debug("FogRenderer disposed")

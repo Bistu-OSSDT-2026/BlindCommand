@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import logging
 import random
-from typing import Optional
 
 from src.battle.commander import Commander
 from src.battle.unit_manager import UnitManager
@@ -36,6 +35,9 @@ from src.core.constants import (
 from src.core.interfaces import IGameState, IMap, IRangeQuery, IUnit
 
 logger = logging.getLogger(__name__)
+
+# HQ 防御半径：AI 单位在此半径内有敌军时回防 HQ
+AI_HQ_DEFENSE_RADIUS = 5
 
 
 class EnemyAI:
@@ -107,8 +109,13 @@ class EnemyAI:
                         cmd_type.value,
                         params,
                     )
-            except Exception:
-                logger.exception("AI 决策异常: %s", unit.name)
+            except (ValueError, TypeError, AttributeError) as e:
+                logger.exception(
+                    "AI 决策异常: %s (type=%s, msg=%s)",
+                    unit.name,
+                    type(e).__name__,
+                    e,
+                )
 
     # ── 单单位决策 ──────────────────────────────────────────────────────
 
@@ -134,6 +141,17 @@ class EnemyAI:
         if self._range_query.has_enemy_in_range(unit, unit.attack_range):
             enemy = self._range_query.find_nearest_enemy(unit)
             if enemy is not None:
+                # 检查 Commander 是否支持战斗结算
+                if not self._commander.has_combat_resolver:
+                    logger.warning(
+                        "AI: %s 攻击范围内有敌人但 Commander 无 combat_resolver，"
+                        "回退为向敌人移动",
+                        unit.name,
+                    )
+                    return (
+                        CommandType.MOVE,
+                        {"x": enemy.position.x, "y": enemy.position.y},
+                    )
                 return (
                     CommandType.ATTACK,
                     {"x": enemy.position.x, "y": enemy.position.y},
@@ -142,7 +160,7 @@ class EnemyAI:
         # ── 优先级 3：保卫 HQ ─────────────────────────────────────
         own_hq = self._unit_manager.get_hq(Faction.ENEMY)
         if own_hq is not None and own_hq.is_alive:
-            if self._range_query.has_enemy_in_range(own_hq, radius=5):
+            if self._range_query.has_enemy_in_range(own_hq, radius=AI_HQ_DEFENSE_RADIUS):
                 # 回防 HQ
                 return (
                     CommandType.MOVE,
@@ -167,6 +185,10 @@ class EnemyAI:
 
     def _direction_toward_own_hq(self, unit: IUnit) -> str | None:
         """计算单位朝向己方 HQ 的撤退方向。
+
+        坐标系统约定：y=0 为顶部，y 增大方向为向下（屏幕坐标系）。
+        dy > 0 表示 HQ 在下方 → 方向 "S"（南）。
+        dy < 0 表示 HQ 在上方 → 方向 "N"（北）。
 
         Args:
             unit: 当前单位
@@ -227,5 +249,15 @@ class EnemyAI:
             if self._map.is_passable(coord):
                 path.append([nx, ny])
                 cx, cy = nx, ny
+
+        # 确保至少 2 个巡逻点（不足时添加一个随机相邻可通行格）
+        if len(path) < 2:
+            for dx, dy in [(1, 0), (-1, 0), (0, 1), (0, -1)]:
+                nx = max(0, min(self._map.width - 1, cx + dx))
+                ny = max(0, min(self._map.height - 1, cy + dy))
+                coord = Coordinate(nx, ny)
+                if self._map.is_passable(coord) and [nx, ny] not in path:
+                    path.append([nx, ny])
+                    break
 
         return path

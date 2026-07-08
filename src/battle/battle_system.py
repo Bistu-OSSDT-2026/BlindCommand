@@ -364,7 +364,8 @@ class BattleSystem:
             return BattleOutcome.DECISIVE_WIN.value
         if attacker_hp_ratio < COMBAT_CRITICAL_HP_RATIO:
             return BattleOutcome.PYRHHIC_WIN.value
-        return BattleOutcome.DECISIVE_WIN.value
+        # 攻方 HP 在 [CRITICAL, HEALTHY) 之间：苦战险胜
+        return BattleOutcome.PYRHHIC_WIN.value
 
     @staticmethod
     def _should_strike_first(unit: IUnit, target: IUnit) -> bool:

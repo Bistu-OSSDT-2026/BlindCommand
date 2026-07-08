@@ -20,6 +20,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from src.core.constants import (
     COMBAT_CRITICAL_HP_RATIO,
     COMBAT_HEALTHY_HP_RATIO,
@@ -29,8 +31,11 @@ from src.core.constants import (
     Coordinate,
     Faction,
     UnitType,
+    get_advantage_multiplier,
 )
 from src.core.interfaces import IUnit
+
+logger = logging.getLogger(__name__)
 
 # ============================================================================
 # Unit 基类 — 直接实现 IUnit 接口
@@ -147,7 +152,16 @@ class Unit(IUnit):
 
     @terrain_defense_bonus.setter
     def terrain_defense_bonus(self, value: int) -> None:
-        """设置地形防御加成（由 battle_system 在结算前设置）。"""
+        """设置地形防御加成（由 battle_system 在结算前设置）。
+
+        Args:
+            value: 地形加成值，范围 [0, 10]
+
+        Raises:
+            ValueError: value 超出合理范围
+        """
+        if not (0 <= value <= 10):
+            raise ValueError(f"地形防御加成超出合理范围 [0, 10]: {value}")
         self._terrain_defense_bonus = value
 
     @property
@@ -191,7 +205,12 @@ class Unit(IUnit):
 
         Returns:
             实际造成的伤害值（受限于当前 HP）
+
+        Raises:
+            ValueError: amount 为负数
         """
+        if amount < 0:
+            raise ValueError(f"伤害值不可为负数，收到: {amount}")
         if not self._is_alive:
             return 0
 
@@ -214,6 +233,7 @@ class Unit(IUnit):
             True 如果移动成功
         """
         if self._speed == 0:
+            logger.warning("%s 速度为 0，无法移动到 (%d,%d)", self._name, target.x, target.y)
             return False
         self._position = target
         return True
@@ -239,7 +259,9 @@ class Unit(IUnit):
             return 0
 
         raw_damage = max(COMBAT_MIN_DAMAGE, self._attack - target.defense)
-        return target.take_damage(raw_damage, self)
+        multiplier = get_advantage_multiplier(self._unit_type, target.unit_type)
+        damage = int(raw_damage * multiplier)
+        return target.take_damage(damage, self)
 
     def can_attack(self, target: IUnit) -> bool:
         """判断是否可以攻击目标。
@@ -252,6 +274,8 @@ class Unit(IUnit):
         Returns:
             True 如果可以攻击
         """
+        if target is None:
+            return False
         if self._attack_range == 0:
             return False
         if not target.is_alive:

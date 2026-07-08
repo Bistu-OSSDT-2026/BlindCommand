@@ -92,6 +92,7 @@ class UnitManager:
         """
         self._map = game_map
         self._units: dict[str, Unit] = {}  # unit_id → Unit
+        self._killed_unit_ids: set[str] = set()  # 已处理阵亡的单位 ID（防重复广播）
 
     # ── 工厂方法 ──────────────────────────────────────────────────────────
 
@@ -140,15 +141,20 @@ class UnitManager:
         """
         created: list[Unit] = []
         for cfg in config_list:
-            unit_type = UnitType(cfg["unit_type"])
-            unit = self.create_unit(
-                unit_type=unit_type,
-                unit_id=cfg["unit_id"],
-                name=cfg["name"],
-                faction=faction,
-                position=Coordinate(cfg["start_x"], cfg["start_y"]),
-            )
-            created.append(unit)
+            try:
+                unit_type = UnitType(cfg["unit_type"])
+                unit = self.create_unit(
+                    unit_type=unit_type,
+                    unit_id=cfg["unit_id"],
+                    name=cfg["name"],
+                    faction=faction,
+                    position=Coordinate(cfg["start_x"], cfg["start_y"]),
+                )
+                created.append(unit)
+            except KeyError as e:
+                raise KeyError(
+                    f"单位配置缺少必需字段 {e}，可用字段: {list(cfg.keys())}"
+                ) from e
         return created
 
     # ── 查询方法 ──────────────────────────────────────────────────────────
@@ -225,13 +231,21 @@ class UnitManager:
             killer: 击杀者
             current_turn: 当前回合数
         """
+        # 防止重复处理：若已广播过 UNIT_KILLED 事件则跳过
+        if unit.unit_id in self._killed_unit_ids:
+            return
+
         if not unit.is_alive:
-            # 单位可能已被 battle_system 的 take_damage 杀死——仍需广播事件。
-            # 但不再重复调用 take_damage（避免 HP 已为 0 时再扣）。
+            # 单位已被 take_damage 杀死（如 battle_system.resolve_battle），
+            # 但这是第一次调用 kill_unit——仍需广播事件。
+            # 不重复调用 take_damage（避免 HP 已为 0 时再扣）。
             pass
         else:
             # 标记阵亡并确保 HP 为 0
             unit.take_damage(unit.current_hp, killer)
+
+        # 标记已处理
+        self._killed_unit_ids.add(unit.unit_id)
 
         # 从地图移除
         self._map.remove_unit(unit)
@@ -296,7 +310,7 @@ class UnitManager:
             for u in self._units.values()
             if u.faction == faction and not u.is_hq
         ]
-        return all(not u.is_alive for u in combat_units) if combat_units else True
+        return all(not u.is_alive for u in combat_units) if combat_units else False
 
     # ── HQ 相关 ───────────────────────────────────────────────────────────
 

@@ -9,7 +9,7 @@ BlindCommand 全局常量定义 — 全员唯一事实来源
 最后更新：2026-07-07
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Final
 
@@ -474,7 +474,7 @@ class UnitDamagedPayload:
 
 
 # 事件类型 → 载荷类型的映射（供 EventBus 校验用）
-EVENT_PAYLOAD_MAP: Final[dict[GameEventType, type]] = {
+EVENT_PAYLOAD_MAP: Final[dict[GameEventType, type | None]] = {
     GameEventType.BATTLE_RESULT:    BattleResultPayload,
     GameEventType.UNIT_KILLED:      UnitKilledPayload,
     GameEventType.UNIT_DAMAGED:     UnitDamagedPayload,
@@ -574,7 +574,7 @@ TERRAIN_IMAGE_FILES: Final[dict[TerrainType, str]] = {
 
 # 此字典定义了 unit_config.json 的标准格式
 # #5 批量生成配置文件时以此为模板
-UNIT_CONFIG_SCHEMA: Final[dict] = {
+UNIT_CONFIG_SCHEMA: Final[dict[str, dict[str, object]]] = {
     "unit_types": {
         unit_type.value: {
             "max_hp": stats.max_hp,
@@ -666,6 +666,19 @@ def _validate_constants() -> None:
         errors.append("MAP_MIN_SIZE 不能大于 MAP_MAX_SIZE")
     if COMBAT_MIN_DAMAGE < 1:
         errors.append("COMBAT_MIN_DAMAGE 必须 ≥ 1")
+
+    # 6. 布局比例与权重总和校验
+    import math
+    if not math.isclose(BATTLE_LOG_WIDTH_RATIO + MAP_AREA_WIDTH_RATIO, 1.0):
+        errors.append(
+            f"BATTLE_LOG_WIDTH_RATIO ({BATTLE_LOG_WIDTH_RATIO}) + "
+            f"MAP_AREA_WIDTH_RATIO ({MAP_AREA_WIDTH_RATIO}) 必须等于 1.0"
+        )
+    weights_sum = sum(COMMAND_DELAY_WEIGHTS)
+    if not math.isclose(weights_sum, 1.0):
+        errors.append(
+            f"COMMAND_DELAY_WEIGHTS 总和 ({weights_sum}) 必须等于 1.0"
+        )
 
     if errors:
         raise ValueError(

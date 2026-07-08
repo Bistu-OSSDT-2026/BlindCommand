@@ -18,6 +18,7 @@ Sprint 2 修复：
 
 from __future__ import annotations
 
+import html
 import logging
 from collections.abc import Callable
 from typing import Any
@@ -117,6 +118,7 @@ class BattleLogPanel:
         self._line_count = 0
         self._current_turn = 0
         self._callbacks: list[tuple[GameEventType, Callable[[Any], None]]] = []
+        self._simulated = False  # BUG-9: guard against duplicate simulate_events() calls
 
         # ── UITextBox ──────────────────────────────────────────────
         self.text_box = pygame_gui.elements.UITextBox(
@@ -169,15 +171,26 @@ class BattleLogPanel:
             text: 纯文本消息（不含 HTML 标签）
             color: CSS 颜色值（如 '#FFD700'）
         """
+        # BUG-8 fix: escape HTML-special characters to prevent injection
+        safe_text = html.escape(text)
         self._line_count += 1
-        html_line = f"<font color='{color}'>{text}</font><br>"
+        html_line = f"<font color='{color}'>{safe_text}</font><br>"
         self.text_box.append_html_text(html_line)
 
-        # 超出行数上限时移除旧内容
+        # BUG-7 fix: actual line culling when exceeding BATTLE_LOG_MAX_LINES
         if self._line_count > BATTLE_LOG_MAX_LINES:
-            logger.debug(
-                "战报行数超过 %d 上限，建议实现裁剪逻辑", BATTLE_LOG_MAX_LINES
-            )
+            raw = self.text_box.html_text
+            # Split by <br> tags; keep last BATTLE_LOG_MAX_LINES lines
+            lines = raw.split("<br>")
+            # Remove empty trailing element if present
+            if lines and lines[-1] == "":
+                lines.pop()
+            if len(lines) > BATTLE_LOG_MAX_LINES:
+                kept = lines[-BATTLE_LOG_MAX_LINES:]
+                new_html = "<br>".join(kept) + "<br>"
+                self.text_box.set_text(new_html)
+                self._line_count = len(kept)
+                logger.debug("战报已裁剪至 %d 行", self._line_count)
 
     def clear(self) -> None:
         """清空所有内容（新游戏开始时调用）。"""
@@ -200,6 +213,12 @@ class BattleLogPanel:
         在 #3 的事件广播未接入时，用于验证面板渲染和滚动功能。
         Sprint 2 保留此方法作为调试入口，但默认不再自动调用。
         """
+        # BUG-9 fix: prevent duplicate simulation
+        if self._simulated:
+            logger.warning("simulate_events() 已调用过，跳过重复执行")
+            return
+        self._simulated = True
+
         demo_messages: list[tuple[str, str]] = [
             (BATTLE_LOG_HIGHLIGHT_COLOR, "━━━ BlindCommand 战报系统已就绪 ━━━"),
             (BATTLE_LOG_HIGHLIGHT_COLOR, "━━━ 第 1 回合 ━━━"),

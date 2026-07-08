@@ -19,7 +19,6 @@ from src.core.fog_of_war import FogOfWar
 from src.core.map import GameMap
 from src.core.unit_base import UnitBase
 
-
 # ── 地形 ──────────────────────────────────────────────────────────────
 # 10×10 全平原
 PLAIN_10X10 = [[0] * 10 for _ in range(10)]
@@ -72,35 +71,11 @@ class TestVisibleToFaction:
         fog = FogOfWar(plain_map, lambda: [friendly_scout, enemy_inf])
         assert fog.is_visible_to_faction(enemy_inf.position, Faction.FRIENDLY) is True
 
-    def test_enemy_out_of_scout_vision(self, plain_map, friendly_scout, enemy_inf):
-        """F1: 敌军移到视野外 → 不可见。"""
-        far_enemy = UnitBase(
-            unit_id="far", name="远敌",
-            faction=Faction.ENEMY, unit_type=UnitType.INFANTRY,
-            position=Coordinate(9, 9),  # dist = 5 from (5,5)? chebyshev(5,5)→(9,9)=4
-            stats=UNIT_STATS[UnitType.INFANTRY],
-        )
-        fog = FogOfWar(plain_map, lambda: [friendly_scout, far_enemy])
-        # distance from (5,5) to (9,9) = 4, scout vision = 6 → visible!
-        # Let me use distance 8
-        far_enemy2 = UnitBase(
-            unit_id="far2", name="远敌2",
-            faction=Faction.ENEMY, unit_type=UnitType.INFANTRY,
-            position=Coordinate(9, 0),  # (5,5)→(9,0) chebyshev = max(4,5) = 5, within 6
-            stats=UNIT_STATS[UnitType.INFANTRY],
-        )
-        # scout at (5,5) vision=6 on plain → radius=6. (9,0) dist=5 → still visible.
-        # Use (0,0): dist from (5,5)=5, still within 6.
-        # Scout vision_range=6 is very wide. Let me just verify a truly out-of-range case
-        very_far = UnitBase(
-            unit_id="vf", name="极远",
-            faction=Faction.ENEMY, unit_type=UnitType.INFANTRY,
-            position=Coordinate(0, 0),  # (5,5)→(0,0) chebyshev=5, within 6
-            stats=UNIT_STATS[UnitType.INFANTRY],
-        )
-        fog2 = FogOfWar(plain_map, lambda: [friendly_scout, very_far])
-        assert fog2.is_visible_to_faction(very_far.position, Faction.FRIENDLY) is True
-        # Use vision_range=3 unit instead (Infantry)
+    def test_enemy_out_of_scout_vision(self, plain_map):
+        """F1: 敌军移到视野外 → 不可见。
+
+        用 Infantry (vision_range=3) 观测 chebyshev 距离=4 的敌人 → 不可见。
+        """
         observer = UnitBase(
             unit_id="obs", name="观察者",
             faction=Faction.FRIENDLY, unit_type=UnitType.INFANTRY,
@@ -110,11 +85,11 @@ class TestVisibleToFaction:
         far = UnitBase(
             unit_id="far", name="远",
             faction=Faction.ENEMY, unit_type=UnitType.INFANTRY,
-            position=Coordinate(9, 9),  # (5,5)→(9,9) chebyshev=4 > 3
+            position=Coordinate(9, 9),  # chebyshev(5,5)→(9,9)=4 > 3
             stats=UNIT_STATS[UnitType.INFANTRY],
         )
-        fog3 = FogOfWar(plain_map, lambda: [observer, far])
-        assert fog3.is_visible_to_faction(far.position, Faction.FRIENDLY) is False
+        fog = FogOfWar(plain_map, lambda: [observer, far])
+        assert fog.is_visible_to_faction(far.position, Faction.FRIENDLY) is False
 
     def test_no_observer_returns_false(self, plain_map, enemy_inf):
         """无观察者时不可见。"""
@@ -130,7 +105,7 @@ class TestForestStealth:
 
     def test_forest_reduces_visibility(self, plain_map, forest_map):
         """F2: 森林中敌人更隐蔽。observer(0,0) vision=6, enemy(6,5)在森林。
-        
+
         有森林: dist=6, stealth=1, threshold=5, 6>5 → 不可见
         无森林(plain): stealth=0, threshold=6, 6≤6 → 可见
         """

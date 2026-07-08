@@ -14,7 +14,7 @@ MarkerSystem — 玩家地图标记系统（Sprint 2）。
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 import pygame
@@ -79,6 +79,9 @@ def _hex_to_rgba(hex_color: str) -> tuple[int, int, int, int]:
 
 # ── 数据模型 ──────────────────────────────────────────────────────────
 
+# BUG-16 fix: module-level counter instead of class variable that leaks across instances
+_marker_counter: int = 0
+
 
 @dataclass
 class Marker:
@@ -98,8 +101,6 @@ class Marker:
 
     # ── 工厂方法 ──────────────────────────────────────────────────
 
-    _counter: int = field(default=0, init=False, repr=False)
-
     @classmethod
     def create(cls, marker_type: MarkerType, coord: Coordinate, label: str = "") -> Marker:
         """创建标记并自动分配 ID。
@@ -112,9 +113,10 @@ class Marker:
         Returns:
             新 Marker 实例
         """
-        cls._counter += 1
+        global _marker_counter
+        _marker_counter += 1
         return cls(
-            marker_id=f"marker_{cls._counter}",
+            marker_id=f"marker_{_marker_counter}",
             marker_type=marker_type,
             coord=coord,
             label=label,
@@ -390,10 +392,12 @@ class MarkerSystem:
 
         for marker in self._markers:
             rect = map_widget.coord_to_rect(marker.coord)
+            # BUG-15 fix: use public accessor instead of private _map_offset
+            map_offset = map_widget.get_map_offset()
             # 转为相对于地图 Surface 的局部坐标
             local_rect = pygame.Rect(
-                rect.x - map_widget.rect.x - map_widget._map_offset[0],
-                rect.y - map_widget.rect.y - map_widget._map_offset[1],
+                rect.x - map_widget.rect.x - map_offset[0],
+                rect.y - map_widget.rect.y - map_offset[1],
                 rect.width,
                 rect.height,
             )
@@ -422,9 +426,12 @@ class MarkerSystem:
             rgba = _hex_to_rgba(MARKER_COLORS[self._dragging_type])
             # 降低不透明度以表示拖拽状态
             rgba = (rgba[0], rgba[1], rgba[2], max(80, rgba[3] // 2))
-            # 相对于地图 Surface 的鼠标位置
-            local_x = self._dragging_pos[0] - map_widget.rect.x - self._map_offset[0]
-            local_y = self._dragging_pos[1] - map_widget.rect.y - self._map_offset[1]
+            # BUG-14 fix: properly convert screen coords to map-surface coords.
+            # self._map_offset already equals map_widget.rect.(x,y), so using
+            # both would double-subtract.  Use map_widget.rect + map_offset instead.
+            map_offset = map_widget.get_map_offset()
+            local_x = self._dragging_pos[0] - map_widget.rect.x - map_offset[0]
+            local_y = self._dragging_pos[1] - map_widget.rect.y - map_offset[1]
             size = TILE_SIZE - 4
             ghost = pygame.Surface((size, size), pygame.SRCALPHA)
             pygame.draw.rect(ghost, rgba, ghost.get_rect(), border_radius=4)

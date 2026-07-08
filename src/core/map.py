@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import heapq
 import json
+import logging
 from collections import defaultdict
 from pathlib import Path
 from typing import Optional
@@ -30,10 +31,10 @@ from src.core.constants import (
     get_move_cost,
     get_terrain_props,
 )
-from src.core.constants import (
-    is_passable as terrain_is_passable,
-)
+from src.core.constants import is_passable as terrain_is_passable
 from src.core.interfaces import IMap, IUnit
+
+logger = logging.getLogger(__name__)
 
 
 class GameMap(IMap):
@@ -76,6 +77,26 @@ class GameMap(IMap):
 
         if not all(len(row) == width for row in terrain):
             raise ValueError("地形矩阵各行长度不一致")
+
+        # 校验地图尺寸在合法范围内（警告但不阻断，测试用小地图除外）
+        if not (MAP_MIN_SIZE <= width <= MAP_MAX_SIZE):
+            logger.warning(
+                "地图宽度 %d 超出推荐范围 [%d, %d]", width, MAP_MIN_SIZE, MAP_MAX_SIZE
+            )
+        if not (MAP_MIN_SIZE <= height <= MAP_MAX_SIZE):
+            logger.warning(
+                "地图高度 %d 超出推荐范围 [%d, %d]", height, MAP_MIN_SIZE, MAP_MAX_SIZE
+            )
+
+        # Sprint 3: 校验所有地形编码在 TerrainType 合法范围内（EDGE-M4）
+        valid_codes = {t.value for t in TerrainType}
+        for y, row in enumerate(terrain):
+            for x, code in enumerate(row):
+                if code not in valid_codes:
+                    raise ValueError(
+                        f"无效地形编码 {code} 在坐标 ({x}, {y})，"
+                        f"有效范围: {sorted(valid_codes)}"
+                    )
 
         self._width = width
         self._height = height
@@ -128,8 +149,20 @@ class GameMap(IMap):
         if not (MAP_MIN_SIZE <= h <= MAP_MAX_SIZE):
             raise ValueError(f"地图高度 {h} 超出限制 [{MAP_MIN_SIZE}, {MAP_MAX_SIZE}]")
 
-        friendly_hq = Coordinate(**data["friendly_hq"])
-        enemy_hq = Coordinate(**data["enemy_hq"])
+        try:
+            friendly_hq = Coordinate(**data["friendly_hq"])
+        except (KeyError, TypeError) as e:
+            raise ValueError(
+                f"地图文件中 friendly_hq 字段无效: {e}. "
+                f"期望格式 {{\"x\": int, \"y\": int}}, 收到 {data.get('friendly_hq')}"
+            ) from e
+        try:
+            enemy_hq = Coordinate(**data["enemy_hq"])
+        except (KeyError, TypeError) as e:
+            raise ValueError(
+                f"地图文件中 enemy_hq 字段无效: {e}. "
+                f"期望格式 {{\"x\": int, \"y\": int}}, 收到 {data.get('enemy_hq')}"
+            ) from e
         return cls(terrain, friendly_hq, enemy_hq)
 
     # ── 地图尺寸 ──────────────────────────────────────────────────────
@@ -224,6 +257,13 @@ class GameMap(IMap):
         Returns:
             True 如果移动合法（from 有该单位、to 可达且未被不可叠占占据）
         """
+        # 校验 from_coord 与单位当前位置一致
+        if from_coord != unit.position:
+            logger.warning(
+                "move_unit: from_coord %s != unit.position %s（%s），仍尝试移动",
+                from_coord, unit.position, unit.unit_id
+            )
+
         if not self.is_within_bounds(to_coord) or not self.is_passable(to_coord):
             return False
 
@@ -255,7 +295,8 @@ class GameMap(IMap):
     # ── A* 寻路 ───────────────────────────────────────────────────────
 
     def find_path(
-        self, start: Coordinate, end: Coordinate, max_steps: int
+        self, start: Coordinate, end: Coordinate, max_steps: int,
+        faction: Optional[Faction] = None,
     ) -> list[Coordinate]:
         """A* 寻路：在 max_steps 步数预算内，找最小移动消耗路径。
 
@@ -264,11 +305,13 @@ class GameMap(IMap):
         - 切比雪夫距离 × 1 作启发式（admissible）
         - 起点或终点不可通行 → 返回空列表
         - 目标超出 max_steps → 返回空列表（全或无语义）
+        - 若提供 faction，则跳过被敌军占据的格（HQ 可双占除外）
 
         Args:
             start: 起点
             end: 终点
             max_steps: 最大跳数（等于单位 speed）
+            faction: 可选，移动单位所属阵营（用于过滤敌军占据格）
 
         Returns:
             路径坐标列表 [start, ..., end]；不可达时返回 []
@@ -310,6 +353,9 @@ class GameMap(IMap):
                 continue
 
             for nb in self.get_neighbors(current):
+                # 若提供了 faction，跳过被敌军占据的格（HQ 可双占除外）
+                if faction is not None and self._is_occupied_by_enemy(nb, faction):
+                    continue
                 step_cost = self.get_move_cost(nb)
                 tentative_g = g_score[current] + step_cost
                 tentative_hops = cur_hops + 1
@@ -334,10 +380,37 @@ class GameMap(IMap):
 
     # ── 内部辅助 ──────────────────────────────────────────────────────
 
+    def _is_occupied_by_enemy(self, coord: Coordinate, faction: Faction) -> bool:
+        """检查格子是否被敌军占据（阻止移动）。
+
+        HQ 格允许双占时，若仅有敌方 HQ 单位占据则允许进入（围攻/占领）。
+        否则任何敌方单位占据均视为阻塞。
+
+        Args:
+            coord: 待检查坐标
+            faction: 移动单位所属阵营
+
+        Returns:
+            True 若格子被敌军阻塞
+        """
+        occupants = self._occupancy.get(coord, [])
+        if not occupants:
+            return False
+        for o in occupants:
+            if o.faction != faction:
+                # 敌方单位 — 若为 HQ 且允许双占，则允许进入
+                if self._allow_stacking_on_hq and o.is_hq:
+                    continue
+                return True
+        return False
+
     def _try_occupy(self, unit: IUnit, coord: Coordinate) -> bool:
         """尝试将单位放入占用表（内部，不做越界/通行检查）。
 
-        处理 HQ 双占逻辑：普通格最多 1 单位；HQ 格最多 1 HQ + 1 围攻者。
+        处理 HQ 双占逻辑（CORE_SPEC.md §5.3 / C-4）：
+        - 普通格最多 1 单位
+        - HQ 格最多 1 HQ 单位 + 1 敌方围攻者（非 HQ）
+        - 同阵营单位不可共享 HQ 格
         """
         occupants = self._occupancy.get(coord, [])
         if not occupants:
@@ -353,7 +426,11 @@ class GameMap(IMap):
         has_non_hq = any(not o.is_hq for o in occupants)
 
         if has_hq and not has_non_hq and len(occupants) == 1:
-            # HQ 格上有 HQ 单位，允许一个围攻者进入（只要新单位不是 HQ）
+            existing_hq = next(o for o in occupants if o.is_hq)
+            # Sprint 3: 验证围攻者与 HQ 分属不同阵营（对齐 CORE_SPEC C-4）
+            if existing_hq.faction == unit.faction:
+                return False
+            # HQ 格上有敌方 HQ 单位，允许一个围攻者进入（只要新单位不是 HQ）
             if not unit.is_hq:
                 self._occupancy[coord].append(unit)
                 return True

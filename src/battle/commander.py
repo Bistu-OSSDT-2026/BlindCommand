@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 from src.battle.command_queue import CommandQueue
 from src.battle.unit_manager import UnitManager
@@ -46,7 +46,6 @@ from src.core.constants import (
     CommandSentPayload,
     EnemySpottedPayload,
     HqCapturedPayload,
-    TerrainType,
 )
 from src.core.event_bus import event_bus
 from src.core.interfaces import ICommand, ICommander, IGameState, IMap, IRangeQuery, IUnit
@@ -95,7 +94,7 @@ class Command:
             True 如果指令执行完成（不再需要继续），False 如果还需下回合继续
         """
         if self._executor is None:
-            logger.warning("Command %s 无 executor，跳过执行", self.command_type.value)
+            logger.error("Command %s 无 executor，跳过执行", self.command_type.value)
             return True
         return self._executor(self, unit, game_state)
 
@@ -191,6 +190,13 @@ class Commander(ICommander):
             self._queue.size,
         )
 
+    # ── 公开属性 ──────────────────────────────────────────────────────
+
+    @property
+    def has_combat_resolver(self) -> bool:
+        """是否已配置战斗结算回调（供 AI 查询）。"""
+        return self._combat_resolver is not None
+
     # ── ICommander：下达指令 ──────────────────────────────────────────
 
     def issue_command(
@@ -208,7 +214,8 @@ class Commander(ICommander):
             unit_id: 目标单位 ID
             command_type: 指令类型
             params: 指令参数（如 {"x": 10, "y": 5} 或 {"direction": "N"}）
-            current_turn: 当前回合数（用于设置 issued_turn 和 arrival_turn）
+            current_turn: 当前回合数（用于设置 issued_turn 和 arrival_turn）。
+                **扩展参数**：ICommander 接口不包含此参数，为本实现的扩展。
 
         Returns:
             True 如果指令有效（单位存在且存活）
@@ -225,6 +232,7 @@ class Commander(ICommander):
             CommandType.SCOUT,
             CommandType.RETREAT,
             CommandType.PATROL,
+            CommandType.CAPTURE,
         ):
             logger.info("issue_command: HQ %s 不可执行 %s", unit_id, command_type.value)
             return False
@@ -235,7 +243,13 @@ class Commander(ICommander):
         self._queue.cancel_for_unit(unit_id)
         self._capture_progress.pop(unit_id, None)
         self._patrol_state.pop(unit_id, None)
-        self._hold_units.discard(unit_id)
+        # 若旧指令是 HOLD，重置地形防御加成到基础值
+        if unit_id in self._hold_units:
+            self._hold_units.discard(unit_id)
+            try:
+                unit.terrain_defense_bonus = self._map.get_defense_bonus(unit.position)
+            except Exception:
+                unit.terrain_defense_bonus = 0
 
         # 创建指令并入队
         cmd = Command(
@@ -430,7 +444,7 @@ class Commander(ICommander):
 
             # 检测途中是否有敌人（停止移动）
             rq = game_state.get_range_query()
-            if rq is not None and rq.has_enemy_in_range(unit, unit.attack_range):
+            if rq is not None and rq.has_enemy_in_range(unit, max(unit.attack_range, unit.vision_range)):
                 logger.info("MOVE: %s 途中遇敌，停止移动", unit.name)
                 break
 
@@ -465,7 +479,13 @@ class Commander(ICommander):
 
         # 先检查当前攻击范围内是否有敌人
         if rq is not None and rq.has_enemy_in_range(unit, unit.attack_range):
-            return self._engage_nearest_enemy(unit, game_state)
+            engaged = self._engage_nearest_enemy(unit, game_state)
+            if not engaged:
+                logger.warning(
+                    "ATTACK: %s 攻击范围内有敌人但未能接战（combat_resolver 不可用？）",
+                    unit.name,
+                )
+            return True
 
         # 向目标移动
         if not game_map.is_within_bounds(target) or not game_map.is_passable(target):
@@ -484,7 +504,13 @@ class Commander(ICommander):
 
             # 移动前检测敌人
             if rq is not None and rq.has_enemy_in_range(unit, unit.attack_range):
-                return self._engage_nearest_enemy(unit, game_state)
+                engaged = self._engage_nearest_enemy(unit, game_state)
+                if not engaged:
+                    logger.warning(
+                        "ATTACK: %s 途中遇敌但未能接战（combat_resolver 不可用？）",
+                        unit.name,
+                    )
+                return True
 
             if not game_map.move_unit(unit, unit.position, next_coord):
                 break
@@ -492,7 +518,13 @@ class Commander(ICommander):
 
             # 移动后再次检测
             if rq is not None and rq.has_enemy_in_range(unit, unit.attack_range):
-                return self._engage_nearest_enemy(unit, game_state)
+                engaged = self._engage_nearest_enemy(unit, game_state)
+                if not engaged:
+                    logger.warning(
+                        "ATTACK: %s 移动后遇敌但未能接战（combat_resolver 不可用？）",
+                        unit.name,
+                    )
+                return True
 
             if unit.position == target:
                 return True
@@ -507,14 +539,18 @@ class Commander(ICommander):
         """HOLD — 原地驻守，遇敌自动反击。持续指令，始终返回 False。"""
         rq = game_state.get_range_query()
         if rq is not None and rq.has_enemy_in_range(unit, unit.attack_range):
-            self._engage_nearest_enemy(unit, game_state)
+            engaged = self._engage_nearest_enemy(unit, game_state)
+            if not engaged:
+                logger.warning(
+                    "HOLD: %s 攻击范围内有敌人但未能接战（combat_resolver 不可用？）",
+                    unit.name,
+                )
 
         # 驻守加成：+1 临时防御（仅本回合有效，不累积）
-        if hasattr(unit, 'terrain_defense_bonus'):
-            game_map = game_state.get_map()
-            base_bonus = game_map.get_defense_bonus(unit.position)
-            unit.terrain_defense_bonus = base_bonus + 1
-            self._hold_units.add(unit.unit_id)
+        game_map = game_state.get_map()
+        base_bonus = game_map.get_defense_bonus(unit.position)
+        unit.terrain_defense_bonus = base_bonus + 1
+        self._hold_units.add(unit.unit_id)
 
         return False  # 持续指令
 
@@ -608,7 +644,26 @@ class Commander(ICommander):
             self._set_unit_position(unit, next_coord)
 
         # 在最终位置重新放置单位
-        game_map.place_unit(unit, unit.position)
+        placed = game_map.place_unit(unit, unit.position)
+        if not placed:
+            logger.error(
+                "RETREAT: %s 撤退后无法在 (%d,%d) 放置，尝试回到起点 (%d,%d)",
+                unit.name,
+                unit.position.x,
+                unit.position.y,
+                start_pos.x,
+                start_pos.y,
+            )
+            # 回退到起点
+            self._set_unit_position(unit, start_pos)
+            fallback_placed = game_map.place_unit(unit, start_pos)
+            if not fallback_placed:
+                logger.error(
+                    "RETREAT: %s 也无法回到起点 (%d,%d)，单位可能丢失！",
+                    unit.name,
+                    start_pos.x,
+                    start_pos.y,
+                )
 
         return True
 
@@ -648,13 +703,7 @@ class Commander(ICommander):
                 return False  # 还没到，下回合继续
             # 到达目标格，进入占领阶段
 
-        # 阶段 2：验证是否为敌方 HQ 格
-        terrain = game_map.get_terrain(target)
-        if terrain != TerrainType.HQ_CELL:
-            logger.info("CAPTURE: 目标 (%d,%d) 不是指挥所", tx, ty)
-            return True  # 不是 HQ，放弃
-
-        # 查找该格上的敌方 HQ 单位
+        # 阶段 2：查找该格上的敌方 HQ 单位（独立于地形类型检查）
         units_at_target = game_map.get_units_at(target)
         enemy_hq = None
         for u in units_at_target:
@@ -665,6 +714,12 @@ class Commander(ICommander):
         if enemy_hq is None:
             logger.info("CAPTURE: 目标格无敌方 HQ")
             return True
+
+        # 同时验证地形是否为 HQ_CELL（作为辅助校验）
+        terrain = game_map.get_terrain(target)
+        if terrain != TerrainType.HQ_CELL:
+            logger.info("CAPTURE: 目标 (%d,%d) 不是指挥所地形", tx, ty)
+            return True  # 不是 HQ，放弃
 
         # 阶段 3：仅步兵可触发占领（其他兵种可到达 HQ 格但无法占领）
         if unit.unit_type != UnitType.INFANTRY:
@@ -748,7 +803,12 @@ class Commander(ICommander):
 
         # 检查当前是否在攻击范围内有敌人
         if rq is not None and rq.has_enemy_in_range(unit, unit.attack_range):
-            self._engage_nearest_enemy(unit, game_state)
+            engaged = self._engage_nearest_enemy(unit, game_state)
+            if not engaged:
+                logger.warning(
+                    "PATROL: %s 攻击范围内有敌人但未能接战（combat_resolver 不可用？）",
+                    unit.name,
+                )
 
         # 确定下一个目标
         if forward:
@@ -801,6 +861,16 @@ class Commander(ICommander):
         if enemy is None:
             return False
 
+        if not unit.can_attack(enemy):
+            logger.warning(
+                "_engage_nearest_enemy: %s 无法攻击 %s（range=%d, dist=%d）",
+                unit.name,
+                enemy.name,
+                unit.attack_range,
+                unit.position.chebyshev_distance(enemy.position),
+            )
+            return False
+
         self._combat_resolver(unit, enemy, game_state.get_current_turn())
         return True
 
@@ -837,7 +907,13 @@ class Commander(ICommander):
 
         通过 Unit.move_to 直接设坐标（Unit 类是简易 teleport 实现）。
         """
-        unit.move_to(coord)
+        if not unit.move_to(coord):
+            logger.warning(
+                "_set_unit_position: %s 移动到 (%d,%d) 失败",
+                unit.name,
+                coord.x,
+                coord.y,
+            )
 
 
 # ============================================================================
@@ -872,6 +948,10 @@ class _SimpleGameState(IGameState):
 
     def get_range_query(self) -> IRangeQuery | None:
         return self._range_query
+
+    def get_fog(self):
+        """_SimpleGameState 不持有雾系统，返回 None。"""
+        return None
 
     def get_current_turn(self) -> int:
         return self._current_turn

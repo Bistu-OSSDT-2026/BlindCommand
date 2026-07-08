@@ -117,14 +117,14 @@ class EventBus:
         self._emitting = True
 
         for handler in handlers:
-                try:
-                    handler(payload)
-                except Exception:
-                    logger.exception(
-                        "EventBus: 回调 %s 在处理事件 %s 时抛出异常",
-                        getattr(handler, "__name__", str(handler)),
-                        event_type.name,
-                    )
+            try:
+                handler(payload)
+            except Exception:
+                logger.exception(
+                    "EventBus: 回调 %s 在处理事件 %s 时抛出异常",
+                    getattr(handler, "__name__", str(handler)),
+                    event_type.name,
+                )
 
         self._emitting = False
 
@@ -153,16 +153,16 @@ class EventBus:
             event_type: 若指定，返回该事件类型的订阅者数；若 None，返回总数
         """
         if event_type is not None:
-            return len(self._handlers[event_type])
+            return len(self._handlers.get(event_type, []))
         return sum(len(v) for v in self._handlers.values())
 
     def get_emit_count(self, event_type: GameEventType) -> int:
         """获取某事件类型已被广播的次数（调试/统计用）。"""
-        return self._emit_counts[event_type]
+        return self._emit_counts.get(event_type, 0)
 
     def has_subscribers(self, event_type: GameEventType) -> bool:
         """是否有订阅者监听该事件。"""
-        return len(self._handlers[event_type]) > 0
+        return len(self._handlers.get(event_type, [])) > 0
 
 
 # ============================================================================

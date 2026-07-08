@@ -18,6 +18,7 @@ BlindCommand 迷雾与视野管理 — IFogOfWar 接口的具体实现
 
 from __future__ import annotations
 
+import logging
 import random
 from typing import Callable
 
@@ -30,6 +31,8 @@ from src.core.constants import (
     get_terrain_props,
 )
 from src.core.interfaces import IFogOfWar, IMap, IUnit
+
+logger = logging.getLogger(__name__)
 
 
 def _clamp(v: int, lo: int, hi: int) -> int:
@@ -155,7 +158,12 @@ class FogOfWar(IFogOfWar):
         """
         if unit.faction != Faction.FRIENDLY or not unit.is_alive:
             return False
-        next_turn = self._next_report_turn.get(unit.unit_id, current_turn)
+        next_turn = self._next_report_turn.get(unit.unit_id)
+        if next_turn is None:
+            logger.debug(
+                "should_report_position: 单位 %s 未初始化汇报调度，默认立即汇报", unit.unit_id
+            )
+            return True
         return current_turn >= next_turn
 
     def on_position_reported(self, unit: IUnit, current_turn: int) -> None:
@@ -172,12 +180,16 @@ class FogOfWar(IFogOfWar):
     # ── 内部辅助 ──────────────────────────────────────────────────────
 
     def _terrain_vision_mod(self, coord: Coordinate) -> int:
-        """观察者所在地形的视野修正。"""
+        """观察者所在地形的视野修正。越界返回 0。"""
+        if not self._map.is_within_bounds(coord):
+            return 0
         terrain_code = self._map.get_terrain(coord).value
         return get_terrain_props(terrain_code).vision_modifier
 
     def _terrain_stealth(self, coord: Coordinate) -> int:
-        """目标所在地形的隐蔽修正。"""
+        """目标所在地形的隐蔽修正。越界返回 0。"""
+        if not self._map.is_within_bounds(coord):
+            return 0
         terrain_code = self._map.get_terrain(coord).value
         return get_terrain_props(terrain_code).stealth_modifier
 

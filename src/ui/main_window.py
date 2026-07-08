@@ -24,7 +24,7 @@ Sprint 2 新增：
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import pygame
 import pygame_gui
@@ -32,7 +32,6 @@ import pygame_gui
 from src.core.constants import (
     BATTLE_LOG_WIDTH_RATIO,
     COMMAND_PANEL_HEIGHT,
-    MAP_AREA_WIDTH_RATIO,
     WINDOW_HEIGHT,
     WINDOW_TITLE,
     WINDOW_WIDTH,
@@ -110,10 +109,14 @@ class MainWindow:
         )
 
         # ── pygame 初始化 ────────────────────────────────────────
-        pygame.init()
-        pygame.display.set_caption(WINDOW_TITLE)
-
-        self._screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+        try:
+            pygame.init()
+            pygame.display.set_caption(WINDOW_TITLE)
+            self._screen = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+        except pygame.error as e:
+            print(f"[错误] pygame 初始化失败: {e}")
+            print("请确认已安装 pygame 并且显示环境可用。")
+            raise SystemExit(1) from e
         self._clock = pygame.time.Clock()
         self._running = True
         self._frame_count = 0
@@ -124,25 +127,25 @@ class MainWindow:
             theme_path=None,
         )
 
-        # ── 布局计算 ─────────────────────────────────────────────
-        layout = self._calculate_layout(WINDOW_WIDTH, WINDOW_HEIGHT)
+        # ── 布局计算（BUG-2: 存储复用，避免每帧重复计算） ──────
+        self._layout = self._calculate_layout(WINDOW_WIDTH, WINDOW_HEIGHT)
 
         # ── 子面板 ───────────────────────────────────────────────
-        self.battle_log = BattleLogPanel(layout["battle_log_rect"], self._ui_manager)
-        self.map_widget = MapWidget(layout["map_rect"])
+        self.battle_log = BattleLogPanel(self._layout["battle_log_rect"], self._ui_manager)
+        self.map_widget = MapWidget(self._layout["map_rect"])
         self.command_panel = CommandPanel(
-            layout["command_rect"], self._ui_manager,
+            self._layout["command_rect"], self._ui_manager,
         )
 
         # ── Sprint 2：标记系统 ───────────────────────────────────
         self.marker_system = MarkerSystem(
-            map_offset=(layout["map_rect"].x, layout["map_rect"].y),
+            map_offset=(self._layout["map_rect"].x, self._layout["map_rect"].y),
         )
         # 构建调色板（在战报面板右侧边缘）
         self.marker_system.build_palette(
-            x=layout["map_rect"].x - 48,
-            y=layout["map_rect"].y,
-            height=layout["map_rect"].height,
+            x=self._layout["map_rect"].x - 48,
+            y=self._layout["map_rect"].y,
+            height=self._layout["map_rect"].height,
         )
         self.map_widget.marker_system = self.marker_system
 
@@ -183,6 +186,13 @@ class MainWindow:
             else:
                 logger.warning("地图加载失败，地图区域将为空")
 
+        # ── Sprint 2：订阅 TURN_START/TURN_END 以同步回合和迷雾 ──
+        # BUG-1 fix: _on_turn_start must subscribe BEFORE battle_log so it
+        # runs first and sets _current_turn before BattleLogPanel formats it.
+        self._turn_counter = 0
+        event_bus.subscribe(GameEventType.TURN_START, self._on_turn_start)
+        event_bus.subscribe(GameEventType.TURN_END, self._on_turn_end)
+
         # ── 战报面板：对接真实事件或模拟输出 ────────────────────
         if self._enable_debug_log:
             # 调试模式：模拟事件输出（不订阅 EventBus）
@@ -194,11 +204,6 @@ class MainWindow:
                 logger.info("BattleLogPanel 已订阅 EventBus（集成模式）")
             else:
                 logger.info("BattleLogPanel 已订阅 EventBus（独立模式，等待 #3 事件）")
-
-        # ── Sprint 2：订阅 TURN_START/TURN_END 以同步回合和迷雾 ──
-        self._turn_counter = 0
-        event_bus.subscribe(GameEventType.TURN_START, self._on_turn_start)
-        event_bus.subscribe(GameEventType.TURN_END, self._on_turn_end)
 
         logger.info(
             "MainWindow 初始化完成 (%d×%d) mode=%s",
@@ -249,6 +254,7 @@ class MainWindow:
                     return
 
             # ── 标记系统事件（在 pygame_gui 之前处理，消费拖拽） ──
+            # marker_system is always initialized in __init__ — no null guard needed
             consumed = self.marker_system.handle_event(event, self.map_widget)
             if consumed:
                 continue
@@ -312,10 +318,9 @@ class MainWindow:
         self.map_widget.draw(self._screen)
 
         # ── 标记调色板（Sprint 2） ──────────────────────────────
-        layout = self._calculate_layout(WINDOW_WIDTH, WINDOW_HEIGHT)
-        palette_x = layout["map_rect"].x - 48
+        palette_x = self._layout["map_rect"].x - 48
         self.marker_system.draw_palette(
-            self._screen, (palette_x, layout["map_rect"].y)
+            self._screen, (palette_x, self._layout["map_rect"].y)
         )
 
         # ── 面板背景和分隔线 ────────────────────────────────────
@@ -329,15 +334,13 @@ class MainWindow:
 
     def _draw_panel_decorations(self) -> None:
         """绘制面板背景和分隔线（非 pygame_gui 控件）。"""
-        layout = self._calculate_layout(WINDOW_WIDTH, WINDOW_HEIGHT)
-
-        # 左侧战报面板背景
-        br = layout["battle_log_rect"]
+        # BUG-2 fix: reuse stored layout instead of recalculating
+        br = self._layout["battle_log_rect"]
         pygame.draw.rect(self._screen, COLOR_PANEL_BG, br)
         pygame.draw.rect(self._screen, COLOR_BORDER, br, 1)
 
         # 底部指令栏背景
-        cr = layout["command_rect"]
+        cr = self._layout["command_rect"]
         pygame.draw.rect(self._screen, (42, 42, 42), cr)
         pygame.draw.rect(self._screen, COLOR_BORDER, cr, 1)
 
@@ -354,11 +357,11 @@ class MainWindow:
         )
 
         # 调色板分隔线（标记调色板 ↔ 地图）[Sprint 2]
-        palette_x = layout["map_rect"].x - 48
+        palette_x = self._layout["map_rect"].x - 48
         pygame.draw.line(
             self._screen, COLOR_BORDER,
-            (palette_x - 2, layout["map_rect"].y),
-            (palette_x - 2, layout["map_rect"].bottom),
+            (palette_x - 2, self._layout["map_rect"].y),
+            (palette_x - 2, self._layout["map_rect"].bottom),
             1,
         )
 

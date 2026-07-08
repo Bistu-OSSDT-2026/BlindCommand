@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -19,16 +19,14 @@ from src.battle.ai import EnemyAI
 from src.battle.command_queue import CommandQueue
 from src.battle.commander import Command, Commander
 from src.battle.unit_manager import UnitManager
-from src.battle.units import Cavalry, Infantry, Scout
+from src.battle.units import Infantry
 from src.core.constants import (
     COMMAND_DELAY_MAX,
     COMMAND_DELAY_MIN,
     COMBAT_ROUT_HP_RATIO,
-    CAPTURE_REQUIRED_TURNS,
     CommandType,
     Coordinate,
     Faction,
-    GameEventType,
     UnitType,
 )
 from src.core.event_bus import event_bus
@@ -405,6 +403,7 @@ class TestEnemyAI:
         fake_map: MagicMock | None = None,
         fake_rq: MagicMock | None = None,
         seed: int = 42,
+        combat_resolver=None,
     ) -> EnemyAI:
         """创建测试用 EnemyAI。"""
         fm = fake_map or _make_fake_map()
@@ -417,7 +416,12 @@ class TestEnemyAI:
             enemy.faction,
             enemy.position,
         )
-        cmdr = Commander(unit_manager=um, game_map=fm, seed=seed)
+        cmdr = Commander(
+            unit_manager=um,
+            game_map=fm,
+            seed=seed,
+            combat_resolver=combat_resolver,
+        )
         return EnemyAI(
             unit_manager=um,
             range_query=frq,
@@ -461,7 +465,10 @@ class TestEnemyAI:
             "friend_1", faction=Faction.FRIENDLY, x=6, y=5
         )
 
-        ai = self._create_ai(enemy, fake_map=fm, fake_rq=fake_rq)
+        # 需要 mock combat_resolver，否则 AI 回退为 MOVE
+        mock_resolver = MagicMock()
+
+        ai = self._create_ai(enemy, fake_map=fm, fake_rq=fake_rq, combat_resolver=mock_resolver)
         cmd_type, params = ai.decide_for_unit(enemy, current_turn=1)
         assert cmd_type == CommandType.ATTACK
 
