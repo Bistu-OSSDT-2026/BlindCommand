@@ -9,21 +9,18 @@ BlindCommand 事件定义
 版本：v1.0
 """
 
-from src.core.constants import (  # noqa: F401  — 重导出
-    # ── 事件枚举 ────────────────────────────────────────────────────
-    GameEventType,
-    # ── 事件载荷数据类 ──────────────────────────────────────────────
+from src.core.constants import (  # noqa: F401  — 重导出; ── 事件枚举 ────────────────────────────────────────────────────; ── 事件载荷数据类 ──────────────────────────────────────────────; ── 载荷映射表 ──────────────────────────────────────────────────
+    EVENT_PAYLOAD_MAP,
     BattleResultPayload,
     CommandArrivedPayload,
     CommandSentPayload,
     EnemySpottedPayload,
+    GameEventType,
     GameOverPayload,
     HqCapturedPayload,
     PositionReportPayload,
     UnitDamagedPayload,
     UnitKilledPayload,
-    # ── 载荷映射表 ──────────────────────────────────────────────────
-    EVENT_PAYLOAD_MAP,
 )
 
 __all__ = [

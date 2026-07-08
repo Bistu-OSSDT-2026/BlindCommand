@@ -36,9 +36,9 @@ from src.core.constants import (
     COLOR_FRIENDLY,
     DEFAULT_MAP_FILE,
     TERRAIN_IMAGE_FILES,
-    Faction,
     TILE_SIZE,
     Coordinate,
+    Faction,
     TerrainType,
 )
 
@@ -292,10 +292,11 @@ class MapWidget:
         if self.marker_system is not None:
             self.marker_system.draw_markers(self._map_surface, self)
 
-        # ── 层 4: 迷雾（Sprint 2） ─────────────────────────────────
+        # ── 层 4: 迷雾 + 高亮（Sprint 2） ────────────────────────────
+        # 注意：先绘制迷雾遮罩，再绘制高亮圈，确保高亮在迷雾之上可见
         if self.fog_renderer is not None:
-            self.fog_renderer.render_highlights(self._map_surface)
             self.fog_renderer.render_fog(self._map_surface)
+            self.fog_renderer.render_highlights(self._map_surface)
 
     def draw(self, screen: pygame.Surface) -> None:
         """将渲染结果 blit 到主屏幕。

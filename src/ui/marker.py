@@ -24,9 +24,9 @@ from src.core.constants import (
     COLOR_MARKER_FRIENDLY,
     COLOR_MARKER_HQ,
     COLOR_MARKER_NOTE,
+    TILE_SIZE,
     Coordinate,
     MarkerType,
-    TILE_SIZE,
 )
 
 logger = logging.getLogger(__name__)

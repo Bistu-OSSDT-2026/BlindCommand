@@ -26,9 +26,9 @@ import pygame_gui
 from src.core.constants import (
     COMMAND_PANEL_BG_COLOR,
     COMMAND_PANEL_HEIGHT,
-    CommandType,
     MAP_DEFAULT_HEIGHT,
     MAP_DEFAULT_WIDTH,
+    CommandType,
 )
 
 if TYPE_CHECKING:

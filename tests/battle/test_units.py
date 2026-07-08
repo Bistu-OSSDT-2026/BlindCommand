@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import pytest
+
 from src.battle.unit_manager import _create_unit_instance
 from src.battle.units import HQ, Artillery, Cavalry, Infantry, Scout, Unit
 from src.core.constants import (

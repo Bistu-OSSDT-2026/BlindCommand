@@ -11,7 +11,6 @@ import pytest
 from src.core.constants import GameEventType
 from src.core.event_bus import EventBus, event_bus
 
-
 # ── 每个测试前后重置全局 event_bus ───────────────────────────────────
 
 @pytest.fixture(autouse=True)

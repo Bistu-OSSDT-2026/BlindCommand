@@ -23,11 +23,11 @@ from src.core.constants import (
     FOG_ALPHA,
     FOG_APPROXIMATE_RADIUS,
     FOG_COLOR,
+    TILE_SIZE,
     Coordinate,
     Faction,
     GameEventType,
     PositionReportPayload,
-    TILE_SIZE,
 )
 from src.core.event_bus import event_bus
 from src.core.interfaces import IFogOfWar

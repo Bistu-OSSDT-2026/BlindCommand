@@ -16,26 +16,25 @@ from src.core.constants import (
     FOG_POSITION_ERROR_RADIUS,
     FOG_POSITION_REPORT_INTERVAL_MAX,
     FOG_POSITION_REPORT_INTERVAL_MIN,
-    GameEventType,
     MAP_DEFAULT_HEIGHT,
     MAP_DEFAULT_WIDTH,
     MAP_MAX_SIZE,
     MAP_MIN_SIZE,
     MAX_TURNS,
     TERRAIN_IMAGE_FILES,
-    TerrainType,
     TERRAIN_PROPS,
     TERRAIN_SYMBOLS,
     TYPE_ADVANTAGE,
     UNIT_DISPLAY_NAMES,
     UNIT_STATS,
-    UnitType,
     Coordinate,
+    GameEventType,
+    TerrainType,
+    UnitType,
     get_advantage_multiplier,
     get_move_cost,
     is_passable,
 )
-
 
 # ============================================================================
 # 枚举完整性

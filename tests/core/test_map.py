@@ -24,7 +24,6 @@ from src.core.constants import (
 from src.core.map import GameMap
 from src.core.unit_base import UnitBase
 
-
 # ── 测试夹具 ──────────────────────────────────────────────────────────
 
 # 10×10 平原（满足 MAP_MIN_SIZE）
