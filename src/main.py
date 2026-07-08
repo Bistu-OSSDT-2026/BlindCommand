@@ -5,7 +5,7 @@ BlindCommand 游戏入口
 
 运行：python -m src.main
 
-版本：v0.2.0 — Sprint 1 UI 原型
+版本：v1.0.0
 """
 
 import logging
@@ -19,6 +19,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.core.constants import VERSION
 from src.ui.main_window import MainWindow
 
 # ── 日志配置 ────────────────────────────────────────────────────────
@@ -33,7 +34,7 @@ logging.basicConfig(
 def main() -> None:
     """游戏入口。创建 MainWindow 并启动主循环。"""
     logger = logging.getLogger("main")
-    logger.info("BlindCommand v0.2.0 — Sprint 1 UI 原型")
+    logger.info("BlindCommand v%s", VERSION)
     logger.info("窗口尺寸: 1280×800, 30 FPS")
     logger.info("关闭窗口或按 ESC 退出, SPACE 打印调试信息")
 

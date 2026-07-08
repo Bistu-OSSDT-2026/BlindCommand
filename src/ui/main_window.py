@@ -18,12 +18,13 @@ Sprint 2 新增：
     C4: 禁止直接修改地图数据
     C5: 所有游戏状态变化只能通过 EventBus 获知
 
-版本: v0.2.0 — Sprint 2
+	版本: v1.0.0
 """
 
 from __future__ import annotations
 
 import logging
+import sys
 from pathlib import Path
 import sys
 from typing import TYPE_CHECKING, Optional
@@ -122,10 +123,14 @@ class MainWindow:
         self._frame_count = 0
 
         # ── pygame_gui 初始化 ────────────────────────────────────
+        # PyInstaller onefile 兼容：_MEIPASS 是解压临时目录
+        if getattr(sys, "frozen", False):
+            _base_dir = Path(sys._MEIPASS)
+        else:
+            _base_dir = Path(__file__).resolve().parent.parent.parent
         self._ui_manager = pygame_gui.UIManager(
             (WINDOW_WIDTH, WINDOW_HEIGHT),
-            # Bug 19 fix: 使用项目根目录的绝对路径
-            theme_path=str(Path(__file__).resolve().parent.parent.parent / "data" / "theme.json"),
+            theme_path=str(_base_dir / "data" / "theme.json"),
         )
 
         # ── 布局计算 ─────────────────────────────────────────────
