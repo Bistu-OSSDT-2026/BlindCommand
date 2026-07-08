@@ -33,7 +33,7 @@ from src.core.constants import (
     Coordinate,
     Faction,
 )
-from src.core.interfaces import IMap, IRangeQuery, IUnit
+from src.core.interfaces import IGameState, IMap, IRangeQuery, IUnit
 
 logger = logging.getLogger(__name__)
 
@@ -74,14 +74,16 @@ class EnemyAI:
 
     # ── 主入口 ──────────────────────────────────────────────────────────
 
-    def decide_all(self, current_turn: int) -> None:
+    def decide_all(self, game_state: IGameState) -> None:
         """为所有存活的敌军单位决策并下达指令。
 
         由 GameLoop 在阶段 2 调用（作为 ai_decider 钩子）。
+        GameLoop 将自身作为 IGameState 传入。
 
         Args:
-            current_turn: 当前回合数
+            game_state: 当前游戏状态（IGameState 查询接口）
         """
+        current_turn = game_state.get_current_turn()
         enemies = self._unit_manager.get_units_by_faction(Faction.ENEMY)
         if not enemies:
             return
@@ -97,6 +99,7 @@ class EnemyAI:
                         unit_id=unit.unit_id,
                         command_type=cmd_type,
                         params=params,
+                        current_turn=current_turn,
                     )
                     logger.debug(
                         "AI: %s → %s params=%s",

@@ -493,8 +493,10 @@ class TestEnemyAI:
             seed=42,
         )
 
-        # 不应崩溃
-        ai.decide_all(current_turn=1)
+        # 不应崩溃 — 传入 mock IGameState
+        mock_gs = MagicMock()
+        mock_gs.get_current_turn.return_value = 1
+        ai.decide_all(game_state=mock_gs)
 
     def test_ai_hq_defend_when_threatened(self) -> None:
         """AI 在己方 HQ 附近有敌人时回防。"""
