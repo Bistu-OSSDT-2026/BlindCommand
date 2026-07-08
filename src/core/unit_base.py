@@ -24,8 +24,8 @@ import logging
 from src.core.constants import (
     COMBAT_MIN_DAMAGE,
     UNIT_DISPLAY_NAMES,
-    Faction,
     Coordinate,
+    Faction,
     UnitStats,
     UnitType,
 )

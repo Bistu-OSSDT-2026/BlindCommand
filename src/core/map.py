@@ -29,6 +29,8 @@ from src.core.constants import (
     TerrainType,
     get_move_cost,
     get_terrain_props,
+)
+from src.core.constants import (
     is_passable as terrain_is_passable,
 )
 from src.core.interfaces import IMap, IUnit

@@ -11,7 +11,7 @@ BlindCommand 游戏主循环 — IGameLoop + IGameState 的具体实现
 - start() 为阻塞式循环（CP-1 命令行用）；GUI 模式下 #4 逐回合调用 run_turn()
 - 胜负判定：全歼 / 回合上限 + 订阅 HQ_CAPTURED 事件
 
-版本：v0.1.0（对齐 CORE_SPEC.md §8）
+版本：v0.2.0（对齐 CORE_SPEC.md §8，CP-2 升级：首次发现追踪 + 动态单位注册）
 """
 
 from __future__ import annotations
@@ -20,19 +20,18 @@ import logging
 from typing import Callable, Optional
 
 from src.core.constants import (
+    MAX_TURNS,
     Faction,
     GameEventType,
     GameOverPayload,
     GameResult,
     HqCapturedPayload,
-    MAX_TURNS,
     PositionReportPayload,
 )
 from src.core.event_bus import event_bus
 from src.core.fog_of_war import FogOfWar
 from src.core.interfaces import (
     ICommander,
-    ICommand,
     IGameLoop,
     IGameState,
     IMap,
@@ -95,6 +94,9 @@ class GameLoop(IGameLoop, IGameState):
         self._paused: bool = False
         self._running: bool = False
 
+        # CP-2：已发现敌军追踪（unit_id 集合），避免重复广播 ENEMY_SPOTTED
+        self._spotted_enemies: set[str] = set()
+
         # 初始化友军汇报调度
         for u in units:
             if u.faction == Faction.FRIENDLY:
@@ -136,10 +138,8 @@ class GameLoop(IGameLoop, IGameState):
 
         # ── 阶段 1：指令出队（#3）─────────────────────────────────
         if self._commander is not None:
-            due_cmds: list[ICommand] = self._commander.process_command_queue(
-                self._current_turn
-            )
-            # 注：COMMAND_ARRIVED 事件的 payload 构造由 #3 负责
+            self._commander.process_command_queue(self._current_turn)
+            # 注：COMMAND_ARRIVED 事件的 payload 构造与 emit 由 #3 负责
             # 此处仅调用 process，事件由 #3 在其内部 emit
 
         # ── 阶段 2：AI 决策（#3）───────────────────────────────────
@@ -230,6 +230,63 @@ class GameLoop(IGameLoop, IGameState):
 
     # 注：get_current_turn 已在 IGameLoop 部分实现（复用）
 
+    # ── CP-2：动态单位注册（供 #3 UnitManager 集成）──────────────────
+
+    def register_unit(self, unit: IUnit) -> bool:
+        """运行时注册新单位（CP-2 新增）。
+
+        #3 的 UnitManager 创建单位后调用此方法将单位纳入 GameLoop 管理。
+        自动初始化友军汇报调度、将单位放置到地图。
+
+        Args:
+            unit: 待注册的单位实例
+
+        Returns:
+            True 如果注册成功
+
+        Raises:
+            ValueError: 若 unit_id 重复
+        """
+        if unit.unit_id in self._units:
+            raise ValueError(f"重复的 unit_id: {unit.unit_id}")
+
+        self._units[unit.unit_id] = unit
+
+        # 放置到地图
+        if not self._map.place_unit(unit, unit.position):
+            # 放置失败（如被占），从注册表回退
+            del self._units[unit.unit_id]
+            return False
+
+        # 友军初始化汇报调度
+        if unit.faction == Faction.FRIENDLY:
+            self._fog.init_report_schedule(unit, self._current_turn)
+
+        logger.debug("注册单位: %s (%s) @ %s", unit.unit_id, unit.name, unit.position)
+        return True
+
+    def unregister_unit(self, unit_id: str) -> Optional[IUnit]:
+        """运行时移除单位（CP-2 新增）。
+
+        从注册表移除、从地图移除、取消指令队列。
+
+        Args:
+            unit_id: 待移除的单位 ID
+
+        Returns:
+            被移除的单位，若不存在返回 None
+        """
+        unit = self._units.pop(unit_id, None)
+        if unit is None:
+            return None
+
+        self._map.remove_unit(unit)
+        if self._commander is not None:
+            self._commander.cancel_all_commands(unit_id)
+
+        logger.debug("注销单位: %s (%s)", unit.unit_id, unit.name)
+        return unit
+
     # ── 内部：单位生命周期 ────────────────────────────────────────────
 
     def _live_units(self) -> list[IUnit]:
@@ -247,25 +304,39 @@ class GameLoop(IGameLoop, IGameState):
     # ── 内部：阶段 4 敌情检测 ─────────────────────────────────────────
 
     def _detect_enemy_spotted(self) -> None:
-        """遍历友军，若视野内出现敌人则广播 ENEMY_SPOTTED。
+        """遍历友军，检测视野内新出现的敌人并广播 ENEMY_SPOTTED（CP-2 升级）。
 
-        简化实现：不维护「已发现集合」，每回合均可能重复广播。
-        CP-2 可升级为仅首次发现。
+        CP-2 改进（对齐 CORE_SPEC.md §8.5）：
+        - 维护 _spotted_enemies 集合，仅对「首次发现」的敌军广播事件
+        - 检测视野内**所有**敌军（而非仅最近一个）
+        - 每回合广播所有新发现的敌军（若有）
         """
+        from src.core.constants import EnemySpottedPayload
+
         for u in self._live_units():
             if u.faction != Faction.FRIENDLY:
                 continue
-            enemy = self._range_query.find_nearest_enemy(u)
-            if enemy is not None:
-                from src.core.constants import EnemySpottedPayload
-                event_bus.emit(GameEventType.ENEMY_SPOTTED, EnemySpottedPayload(
-                    turn=self._current_turn,
-                    reporter_id=u.unit_id,
-                    reporter_name=u.name,
-                    enemy_type=enemy.unit_type.value,
-                    enemy_count=1,
-                    location=enemy.position.to_tuple(),
-                ))
+
+            # 视野内所有敌军（排除已发现的）
+            enemies_in_sight = self._range_query.get_units_in_range(
+                center=u.position,
+                radius=u.vision_range,
+                faction=Faction.ENEMY,
+            )
+            for enemy in enemies_in_sight:
+                if enemy.unit_id not in self._spotted_enemies:
+                    self._spotted_enemies.add(enemy.unit_id)
+                    event_bus.emit(
+                        GameEventType.ENEMY_SPOTTED,
+                        EnemySpottedPayload(
+                            turn=self._current_turn,
+                            reporter_id=u.unit_id,
+                            reporter_name=u.name,
+                            enemy_type=enemy.unit_type.value,
+                            enemy_count=1,
+                            location=enemy.position.to_tuple(),
+                        ),
+                    )
 
     # ── 内部：阶段 7 位置汇报 ─────────────────────────────────────────
 

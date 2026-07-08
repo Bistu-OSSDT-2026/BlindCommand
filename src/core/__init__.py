@@ -9,50 +9,50 @@ src/core — 底层数据层（#2 负责）
 
 # ── 常量 ──────────────────────────────────────────────────────────────
 from src.core.constants import (
-    # 枚举
-    BattleOutcome,
-    CommandType,
-    Direction,
-    Faction,
-    GameEventType,
-    GameResult,
-    MarkerType,
-    TerrainType,
-    UnitType,
-    # 数据类
-    Coordinate,
-    UnitStats,
-    # 兵种配置
-    TYPE_ADVANTAGE,
-    UNIT_DISPLAY_NAMES,
-    UNIT_STATS,
-    # 地形配置
-    TerrainProps,
-    TERRAIN_PROPS,
-    TERRAIN_SYMBOLS,
     # 游戏规则
     CAPTURE_REQUIRED_TURNS,
     COMBAT_MIN_DAMAGE,
     COMBAT_TYPE_ADVANTAGE_MULT,
     COMMAND_DELAY_MAX,
     COMMAND_DELAY_MIN,
+    EVENT_PAYLOAD_MAP,
     FOG_POSITION_ERROR_RADIUS,
     FOG_POSITION_REPORT_INTERVAL_MAX,
     FOG_POSITION_REPORT_INTERVAL_MIN,
     MAP_DEFAULT_HEIGHT,
     MAP_DEFAULT_WIDTH,
     MAX_TURNS,
+    TERRAIN_PROPS,
+    TERRAIN_SYMBOLS,
+    # 兵种配置
+    TYPE_ADVANTAGE,
+    UNIT_DISPLAY_NAMES,
+    UNIT_STATS,
+    # 枚举
+    BattleOutcome,
     # 事件载荷
     BattleResultPayload,
     CommandArrivedPayload,
     CommandSentPayload,
+    CommandType,
+    # 数据类
+    Coordinate,
+    Direction,
     EnemySpottedPayload,
-    EVENT_PAYLOAD_MAP,
+    Faction,
+    GameEventType,
     GameOverPayload,
+    GameResult,
     HqCapturedPayload,
+    MarkerType,
     PositionReportPayload,
+    # 地形配置
+    TerrainProps,
+    TerrainType,
     UnitDamagedPayload,
     UnitKilledPayload,
+    UnitStats,
+    UnitType,
     # 查询函数
     get_advantage_multiplier,
     get_move_cost,
