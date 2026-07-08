@@ -44,8 +44,15 @@ def _get_base_path() -> Path:
 
 
 def _create_font(size: int) -> pygame.font.Font:
-    """创建支持中文的字体。依次尝试常见中文字体，回退默认字体。"""
-    for name in ("Microsoft YaHei", "SimHei", "Noto Sans SC", "WenQuanYi Micro Hei"):
+    """创建字体。优先系统中文字体路径 → SysFont → 默认字体。"""
+    for name in ("microsoftyahei", "simhei", "notosanssc", "wenquanyimicrohei"):
+        path = pygame.font.match_font(name)
+        if path:
+            try:
+                return pygame.font.Font(path, size)
+            except Exception:
+                continue
+    for name in ("Microsoft YaHei", "SimHei", "Noto Sans SC"):
         try:
             return pygame.font.SysFont(name, size)
         except Exception:
@@ -88,10 +95,10 @@ GRID_LINE_WIDTH: int = 1
 # ── 单位兵种简写 ──────────────────────────────────────────────────────
 
 UNIT_ABBREVIATIONS: dict[str, str] = {
-    "Infantry":  "步兵",
-    "Cavalry":   "骑兵",
-    "Artillery": "炮兵",
-    "Scout":     "侦察",
+    "Infantry":  "In",
+    "Cavalry":   "Cv",
+    "Artillery": "Ar",
+    "Scout":     "Sc",
     "HQ":        "HQ",
 }
 
@@ -209,6 +216,7 @@ class MapWidget:
 
         # ── 预加载图片 ────────────────────────────────────────────
         self._load_tile_images()
+        self._load_unit_images()
 
     # ── 属性 ────────────────────────────────────────────────────────
 
@@ -515,6 +523,23 @@ class MapWidget:
 
         self._images_loaded = True
 
+    def _load_unit_images(self) -> None:
+        """预加载单位图片到缓存。文件名格式: {unit_type}_{color}.png。"""
+        assets_path = _get_base_path() / ASSETS_DIR / "units"
+        for unit_type in ("infantry", "cavalry", "artillery", "scout", "hq"):
+            for color in ("blue", "red"):
+                key = f"{unit_type}_{color}"
+                filepath = assets_path / f"{key}.png"
+                if filepath.exists():
+                    try:
+                        img = pygame.image.load(str(filepath))
+                        img = pygame.transform.scale(img, (self._tile_size - 4, self._tile_size - 4))
+                        self._unit_image_cache[key] = img
+                    except pygame.error as e:
+                        logger.warning("单位图片加载失败: %s — %s", filepath, e)
+                else:
+                    logger.debug("单位图片不存在: %s", filepath)
+
     # ── 私有方法：渲染层 ─────────────────────────────────────────────
 
     def _render_terrain_layer(self) -> None:
@@ -666,8 +691,15 @@ class MapWidget:
                 self._tile_size - 4, self._tile_size - 4,
             )
 
-            if alpha < 255:
-                # 半透明渲染需要单独 Surface
+            # ── 优先使用单位图片，无图片时降级纯色方块 ────────────
+            img_key = f"{unit.unit_type.value.lower()}_{'blue' if is_friendly else 'red'}"
+            unit_img = self._unit_image_cache.get(img_key)
+
+            if unit_img is not None:
+                if alpha < 255:
+                    unit_img.set_alpha(alpha)
+                self._map_surface.blit(unit_img, unit_rect.topleft)
+            elif alpha < 255:
                 unit_overlay = pygame.Surface(
                     (unit_rect.width, unit_rect.height), pygame.SRCALPHA
                 )
@@ -701,7 +733,17 @@ class MapWidget:
                 x + 2, y + 2,
                 self._tile_size - 4, self._tile_size - 4,
             )
-            pygame.draw.rect(self._map_surface, color, unit_rect, border_radius=4)
+
+            # ── 优先使用单位图片 ──────────────────────────────────
+            unit_type = unit.get("unit_type", "?").lower()
+            color_name = "blue" if faction == "FRIENDLY" else "red"
+            img_key = f"{unit_type}_{color_name}"
+            unit_img = self._unit_image_cache.get(img_key)
+
+            if unit_img is not None:
+                self._map_surface.blit(unit_img, unit_rect.topleft)
+            else:
+                pygame.draw.rect(self._map_surface, color, unit_rect, border_radius=4)
 
             # 兵种简写标签
             unit_type_str = unit.get("unit_type", "?")

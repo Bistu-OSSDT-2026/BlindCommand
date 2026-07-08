@@ -35,8 +35,15 @@ logger = logging.getLogger(__name__)
 # ── 字体辅助 ──────────────────────────────────────────────────────────
 
 def _create_font(size: int) -> pygame.font.Font:
-    """创建支持中文的字体。依次尝试常见中文字体，回退默认字体。"""
-    for name in ("Microsoft YaHei", "SimHei", "Noto Sans SC", "WenQuanYi Micro Hei"):
+    """创建字体。优先系统中文字体路径 → SysFont → 默认字体。"""
+    for name in ("microsoftyahei", "simhei", "notosanssc", "wenquanyimicrohei"):
+        path = pygame.font.match_font(name)
+        if path:
+            try:
+                return pygame.font.Font(path, size)
+            except Exception:
+                continue
+    for name in ("Microsoft YaHei", "SimHei", "Noto Sans SC"):
         try:
             return pygame.font.SysFont(name, size)
         except Exception:
