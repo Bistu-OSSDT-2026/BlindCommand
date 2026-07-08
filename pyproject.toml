@@ -125,6 +125,10 @@ add_data             = [
     "data:data",
 ]
 hiddenimports        = [
+    "pygame",
+    "pygame._freetype",
+    "pygame.mixer",
+    "pygame.font",
     "pygame_gui.core",
     "pygame_gui.elements",
 ]
