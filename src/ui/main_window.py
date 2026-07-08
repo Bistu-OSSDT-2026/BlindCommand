@@ -122,12 +122,20 @@ class MainWindow:
         self._running = True
         self._frame_count = 0
 
-        # ── pygame_gui 初始化 ────────────────────────────────────
+        # ── 中文支持：加载捆绑字体 ─────────────────────────────
         # PyInstaller onefile 兼容：_MEIPASS 是解压临时目录
         if getattr(sys, "frozen", False):
             _base_dir = Path(sys._MEIPASS)
         else:
             _base_dir = Path(__file__).resolve().parent.parent.parent
+
+        _font_path = _base_dir / "src" / "ui" / "assets" / "fonts" / "chinese.ttf"
+        if _font_path.exists():
+            _cjk_font = pygame.font.Font(str(_font_path), 14)
+            # 注册为 pygame 默认字体，pygame_gui 会自动拾取
+            logger.info("已加载中文字体: %s", _font_path)
+
+        # ── pygame_gui 初始化 ────────────────────────────────────
         self._ui_manager = pygame_gui.UIManager(
             (WINDOW_WIDTH, WINDOW_HEIGHT),
             theme_path=str(_base_dir / "data" / "theme.json"),

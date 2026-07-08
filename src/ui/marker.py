@@ -35,19 +35,27 @@ logger = logging.getLogger(__name__)
 # ── 字体辅助 ──────────────────────────────────────────────────────────
 
 def _create_font(size: int) -> pygame.font.Font:
-    """创建字体。优先系统中文字体路径 → SysFont → 默认字体。"""
-    for name in ("microsoftyahei", "simhei", "notosanssc", "wenquanyimicrohei"):
+    """创建字体。优先捆绑中文字体 → 系统中文字体 → 默认字体。"""
+    import sys
+    from pathlib import Path
+    if getattr(sys, "frozen", False):
+        base = Path(sys._MEIPASS)
+    else:
+        base = Path(__file__).resolve().parent.parent.parent
+    bundled = base / "src" / "ui" / "assets" / "fonts" / "chinese.ttf"
+    if bundled.exists():
+        try:
+            return pygame.font.Font(str(bundled), size)
+        except Exception:
+            pass
+    # 系统中文字体
+    for name in ("microsoftyahei", "simhei", "notosanssc"):
         path = pygame.font.match_font(name)
         if path:
             try:
                 return pygame.font.Font(path, size)
             except Exception:
                 continue
-    for name in ("Microsoft YaHei", "SimHei", "Noto Sans SC"):
-        try:
-            return pygame.font.SysFont(name, size)
-        except Exception:
-            continue
     return pygame.font.Font(None, size)
 
 
