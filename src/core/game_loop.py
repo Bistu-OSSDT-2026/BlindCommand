@@ -17,6 +17,7 @@ BlindCommand 游戏主循环 — IGameLoop + IGameState 的具体实现
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Callable, Optional
 
 from src.core.constants import (
@@ -104,6 +105,76 @@ class GameLoop(IGameLoop, IGameState):
 
         # 订阅 HQ 占领事件（#3 广播）
         event_bus.subscribe(GameEventType.HQ_CAPTURED, self._on_hq_captured)
+
+    # ── 工厂方法：从 JSON 文件一键组装（CP-2，供 #5 集成）────────────
+
+    @classmethod
+    def from_map_file(
+        cls,
+        map_path: str | Path,
+        *,
+        commander: ICommander | None = None,
+        combat_resolver: Callable[[IGameState], None] | None = None,
+        ai_decider: Callable[[IGameState], None] | None = None,
+    ) -> GameLoop:
+        """从地图 JSON 文件一键创建 GameLoop（CP-2 新增）。
+
+        自动完成：加载地形 → 创建 GameMap → 根据 unit_config 创建 UnitBase 实例
+        → 放置到地图 → 组装 GameLoop。供 #5 在 main.py 中快速集成。
+
+        Args:
+            map_path: 地图 JSON 文件路径（如 data/maps/map_01.json）
+            commander: #3 指令管理系统（可空）
+            combat_resolver: #3 战斗结算钩子
+            ai_decider: #3 AI 决策钩子
+
+        Returns:
+            组装完成的 GameLoop 实例，已包含双方单位
+
+        Raises:
+            FileNotFoundError: 地图文件不存在
+            ValueError: JSON 格式错误
+        """
+        import json
+
+        from src.core.constants import UNIT_STATS, Coordinate, Faction, UnitType
+        from src.core.map import GameMap
+        from src.core.unit_base import UnitBase
+
+        path = Path(map_path)
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+
+        # 1. 创建地图
+        game_map = GameMap.from_map_file(path)
+
+        # 2. 创建双方单位
+        units: list[IUnit] = []
+        for faction_key, faction in [("friendly_units", Faction.FRIENDLY),
+                                      ("enemy_units", Faction.ENEMY)]:
+            for cfg in data.get(faction_key, []):
+                ut = UnitType(cfg["unit_type"])
+                stats = UNIT_STATS[ut]
+                unit = UnitBase(
+                    unit_id=cfg["unit_id"],
+                    name=cfg["name"],
+                    faction=faction,
+                    unit_type=ut,
+                    position=Coordinate(cfg["start_x"], cfg["start_y"]),
+                    stats=stats,
+                    game_map=game_map,
+                )
+                game_map.place_unit(unit, unit.position)
+                units.append(unit)
+
+        # 3. 组装 GameLoop
+        return cls(
+            game_map=game_map,
+            units=units,
+            commander=commander,
+            combat_resolver=combat_resolver,
+            ai_decider=ai_decider,
+        )
 
     # ── IGameLoop：回合驱动 ───────────────────────────────────────────
 
@@ -227,6 +298,14 @@ class GameLoop(IGameLoop, IGameState):
 
     def get_range_query(self) -> IRangeQuery:
         return self._range_query
+
+    def get_fog(self) -> FogOfWar:
+        """获取迷雾/视野管理器（CP-2 新增，供 #4 UI 查询可见性）。
+
+        Returns:
+            FogOfWar 实例，提供 is_visible_to_faction / is_unit_visible 等查询
+        """
+        return self._fog
 
     # 注：get_current_turn 已在 IGameLoop 部分实现（复用）
 

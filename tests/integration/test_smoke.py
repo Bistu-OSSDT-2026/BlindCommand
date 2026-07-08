@@ -15,10 +15,9 @@
 from __future__ import annotations
 
 import pytest
-
 from src.battle.battle_system import BattleSystem
 from src.battle.unit_manager import UnitManager
-from src.battle.units import Cavalry, Infantry
+from src.battle.units import Infantry
 from src.core.constants import (
     CommandType,
     Coordinate,
@@ -349,6 +348,123 @@ class TestBattleResolution:
             GameResult.VICTORY.value,
             GameResult.DEFEAT.value,
         )
+
+
+# ============================================================================
+# CP-2 新增：from_map_file 工厂 + get_fog + 标准集成模板
+# ============================================================================
+
+
+class TestFromMapFileFactory:
+    """CP-2: GameLoop.from_map_file() 一键组装 + #5 集成参考。"""
+
+    def test_from_map_file_creates_game_loop(self):
+        """从 map_01.json 一键创建 GameLoop，验证单位正确加载。"""
+        from pathlib import Path
+
+        from src.core.constants import (
+            DEFAULT_MAP_FILE,
+            Faction,
+        )
+
+        # 使用项目自带的地图文件
+        map_path = Path(DEFAULT_MAP_FILE)
+        if not map_path.exists():
+            pytest.skip(f"地图文件不存在: {map_path}")
+
+        gl = GameLoop.from_map_file(map_path)
+
+        # 验证基本状态
+        assert gl.get_current_turn() == 0
+        assert gl.get_game_result() is None
+        assert gl.get_map() is not None
+
+        # 验证双方单位已加载（map_01.json：5 友军 + 5 敌军）
+        all_units = gl.get_all_units()
+        friendly = gl.get_all_units(Faction.FRIENDLY)
+        enemy = gl.get_all_units(Faction.ENEMY)
+        assert len(friendly) == 5, f"友军应为 5，实际 {len(friendly)}"
+        assert len(enemy) == 5, f"敌军应为 5，实际 {len(enemy)}"
+        assert len(all_units) == 10
+
+        # 验证单位已放置到地图
+        for u in friendly:
+            assert u in gl.get_map().get_units_at(u.position)
+
+    def test_from_map_file_runs_one_turn(self):
+        """CP-2 标准集成模板：加载 → 组装 BattleSystem → 跑 1 回合。"""
+        from pathlib import Path
+
+        from src.battle.battle_system import BattleSystem
+        from src.battle.unit_manager import UnitManager
+        from src.core.constants import DEFAULT_MAP_FILE
+
+        map_path = Path(DEFAULT_MAP_FILE)
+        if not map_path.exists():
+            pytest.skip(f"地图文件不存在: {map_path}")
+
+        # ── 步骤 1：一键创建 GameLoop ──────────────────────────
+        gl = GameLoop.from_map_file(map_path)
+
+        # ── 步骤 2：#3 创建 BattleSystem（需要 UnitManager + 地图） ──
+        um = UnitManager(gl.get_map())
+        # 注：CP-2 集成时 UnitManager 通过 create_unit() 创建单位，
+        # 此处 gl.get_all_units() 返回的是 GameLoop.from_map_file() 预创建的单位，
+        # UnitManager 直接接收 BattleSystem 使用其 get_alive_units() 即可
+        bs = BattleSystem(
+            unit_manager=um,
+            range_query=gl.get_range_query(),
+            game_map=gl.get_map(),
+            seed=42,
+        )
+
+        # ── 步骤 3：注入战斗钩子，运行 1 回合 ──────────────────
+        events_received = []
+
+        def on_battle(payload):
+            events_received.append(("BATTLE", payload))
+
+        def on_turn_start(_):
+            events_received.append(("TURN_START", None))
+
+        event_bus.subscribe(GameEventType.BATTLE_RESULT, on_battle)
+        event_bus.subscribe(GameEventType.TURN_START, on_turn_start)
+
+        # 重新构造以注入钩子（CP-2 标准模式）
+        gl2 = GameLoop(
+            game_map=gl.get_map(),
+            units=gl.get_all_units(),
+            combat_resolver=lambda state: bs.process_all_battles(state.get_current_turn()),
+        )
+        gl2.run_turn()
+
+        # ── 验证 ───────────────────────────────────────────────
+        assert gl2.get_current_turn() == 1
+        # TURN_START 必定触发
+        assert any(e[0] == "TURN_START" for e in events_received)
+
+    def test_get_fog_available(self):
+        """CP-2: get_fog() 返回迷雾管理器供 #4 UI 查询。"""
+        from pathlib import Path
+
+        from src.core.constants import DEFAULT_MAP_FILE
+
+        map_path = Path(DEFAULT_MAP_FILE)
+        if not map_path.exists():
+            pytest.skip(f"地图文件不存在: {map_path}")
+
+        gl = GameLoop.from_map_file(map_path)
+        fog = gl.get_fog()
+
+        assert fog is not None
+
+        # #4 UI 的标准查询模式
+        friendly_area = fog.get_visible_area(Faction.FRIENDLY)
+        assert len(friendly_area) > 0, "友军应有可见区域"
+
+        # 验证友军单位对己方可见
+        for u in gl.get_all_units(Faction.FRIENDLY):
+            assert fog.is_unit_visible(u, Faction.FRIENDLY) is True
 
 
 # ============================================================================
