@@ -1,10 +1,10 @@
 # BlindCommand 底层数据层设计规范（CORE_SPEC）
 
-> **版本**: v1.0-draft
-> **负责人**: #2（底层架构 Vibe 程序员）
-> **范围**: `src/core/` 下除 Phase 0 已定稿文件（`constants.py` / `types.py` / `events.py` / `interfaces.py` / `event_bus.py`）之外的全部模块
-> **依赖文档**: `DESIGN.md`（做什么）、`WORKFLOW.md`（谁来做/怎么做）、`STYLE_GUIDE.md`（怎么写）、`TECH_STACK.md`（工具链）、`PROMPTS.md`（AI 生成模板）
-> **最后更新**: 2026-07-07
+> **版本**: v1.1  
+> **负责人**: #2（底层架构 Vibe 程序员）  
+> **范围**: `src/core/` 下除 Phase 0 已定稿文件（`constants.py` / `types.py` / `events.py` / `interfaces.py` / `event_bus.py`）之外的全部模块  
+> **依赖文档**: `DESIGN.md`（做什么）、`WORKFLOW.md`（谁来做/怎么做）、`STYLE_GUIDE.md`（怎么写）、`TECH_STACK.md`（工具链）、`PROMPTS.md`（AI 生成模板）  
+> **最后更新**: 2026-07-08
 
 ---
 
@@ -1195,6 +1195,7 @@ def resume(self) -> None:
 | 版本 | 日期 | 作者 | 变更 |
 |:----:|:----:|:----:|------|
 | v1.0-draft | 2026-07-07 | #2 | 初稿，覆盖 5 个模块 + 跨层契约 8 项 |
+| v1.1 | 2026-07-08 | #2 | Sprint 2 完成：CP-2 敌情首次发现追踪 + GameLoop 动态单位注册 + 测试补全（+8 条） |
 
 ---
 

@@ -252,3 +252,156 @@ class TestGameState:
         u2 = _make_enemy("dup", 8, 8)
         with pytest.raises(ValueError, match="重复"):
             GameLoop(plain_map, [u1, u2])
+
+
+# ============================================================================
+# CP-2 新增：敌情首次发现追踪
+# ============================================================================
+
+
+class TestEnemySpottedFirstDiscovery:
+    """CP-2: _detect_enemy_spotted 仅对首次发现的敌军广播 ENEMY_SPOTTED。"""
+
+    def test_enemy_spotted_only_once_per_enemy(self, plain_map):
+        """同一敌军在多回合中只触发一次 ENEMY_SPOTTED。"""
+        f = _make_friendly("f_scout", 5, 5, UnitType.SCOUT)
+        e = _make_enemy("e1", 6, 5)  # 相邻，在视野内
+        gl = GameLoop(plain_map, [f, e])
+
+        spotted_events = []
+
+        def on_spotted(payload):
+            spotted_events.append(payload)
+
+        event_bus.subscribe(GameEventType.ENEMY_SPOTTED, on_spotted)
+
+        # 第一回合：应触发首次发现
+        gl.run_turn()
+        assert len(spotted_events) == 1, f"首次应广播 ENEMY_SPOTTED，实际 {len(spotted_events)}"
+        assert spotted_events[0].enemy_type == e.unit_type.value
+
+        # 第二回合：同一敌军不应再次触发
+        gl.run_turn()
+        assert len(spotted_events) == 1, (
+            f"第二回合不应重复广播同一敌军，实际新增 {len(spotted_events) - 1} 条"
+        )
+
+    def test_multiple_enemies_spotted_independently(self, plain_map):
+        """多个不同敌军各自触发一次首次发现事件。"""
+        f = _make_friendly("f_scout", 5, 5, UnitType.SCOUT)
+        e1 = _make_enemy("e1", 6, 5)
+        e2 = _make_enemy("e2", 5, 6)
+        gl = GameLoop(plain_map, [f, e1, e2])
+
+        spotted_ids = []
+
+        def on_spotted(payload):
+            spotted_ids.append(payload.reporter_id)  # 用 reporter 追踪
+
+        event_bus.subscribe(GameEventType.ENEMY_SPOTTED, on_spotted)
+
+        gl.run_turn()
+        # 两个敌军都在视野内，应各触发一次
+        assert len(spotted_ids) == 2, f"两个新敌军应各触发一次，实际 {len(spotted_ids)}"
+
+    def test_new_enemy_spotted_after_previous_discoveries(self, plain_map):
+        """已发现敌军不再触发，但新进入视野的敌军仍触发。"""
+        f = _make_friendly("f_scout", 5, 5, UnitType.SCOUT)
+        e_known = _make_enemy("e_known", 6, 5)
+
+        gl = GameLoop(plain_map, [f, e_known])
+
+        spotted_events = []
+
+        def on_spotted(payload):
+            spotted_events.append(payload)
+
+        event_bus.subscribe(GameEventType.ENEMY_SPOTTED, on_spotted)
+
+        # 第一回合：发现 e_known
+        gl.run_turn()
+        assert len(spotted_events) == 1
+
+        # 第二回合：添加新敌军 e_new，仍在视野内
+        e_new = _make_enemy("e_new", 5, 6)
+        gl.register_unit(e_new)
+        gl.run_turn()
+        # 应只触发新敌军的发现
+        assert len(spotted_events) == 2, f"新敌军应触发事件，实际新增 {len(spotted_events) - 1}"
+        assert spotted_events[-1].enemy_type == e_new.unit_type.value
+
+
+# ============================================================================
+# CP-2 新增：动态单位注册
+# ============================================================================
+
+
+class TestRegisterUnit:
+    """CP-2: GameLoop.register_unit / unregister_unit。"""
+
+    def test_register_unit_adds_to_game_loop(self, plain_map):
+        """注册后单位出现在 get_all_units 中且放置到地图。"""
+        f = _make_friendly("f1", 5, 5)
+        gl = GameLoop(plain_map, [f])
+
+        new_unit = _make_friendly("f2", 7, 7)
+        result = gl.register_unit(new_unit)
+
+        assert result is True
+        assert gl.get_unit_by_id("f2") is new_unit
+        assert new_unit in gl.get_all_units()
+        assert new_unit in plain_map.get_units_at(new_unit.position)
+
+    def test_register_unit_duplicate_id_raises(self, plain_map):
+        """重复 unit_id 注册应抛 ValueError。"""
+        f = _make_friendly("f1", 5, 5)
+        gl = GameLoop(plain_map, [f])
+
+        dup = _make_enemy("f1", 8, 8)
+        with pytest.raises(ValueError, match="重复"):
+            gl.register_unit(dup)
+
+    def test_register_unit_init_fog_schedule(self, plain_map):
+        """注册友军单位时自动初始化汇报调度。"""
+        e = _make_enemy("e1", 8, 8)  # 需要敌军存活避免提前胜利
+        gl = GameLoop(plain_map, [e])
+
+        f_new = _make_friendly("f_new", 5, 5, UnitType.SCOUT)
+        gl.register_unit(f_new)
+
+        # 跑足够多回合，验证新单位会汇报位置
+        reports = []
+
+        def on_report(payload):
+            if payload.unit_id == "f_new":
+                reports.append(payload)
+
+        event_bus.subscribe(GameEventType.POSITION_REPORT, on_report)
+
+        for _ in range(20):
+            gl.run_turn()
+            if gl.get_game_result() is not None:
+                break
+            if reports:
+                break
+
+        assert len(reports) >= 1, f"新注册的友军应在 20 回合内至少汇报一次，实际 {len(reports)}"
+
+    def test_unregister_unit_removes_from_game_loop(self, plain_map):
+        """注销后单位从注册表和地图中移除。"""
+        f1 = _make_friendly("f1", 5, 5)
+        f2 = _make_friendly("f2", 7, 7)
+        e = _make_enemy("e1", 8, 8)
+        gl = GameLoop(plain_map, [f1, f2, e])
+
+        removed = gl.unregister_unit("f2")
+        assert removed is not None
+        assert removed.unit_id == "f2"
+        assert gl.get_unit_by_id("f2") is None
+        assert f2 not in gl.get_all_units()
+        assert plain_map.get_units_at(Coordinate(7, 7)) == []
+
+    def test_unregister_nonexistent_returns_none(self, plain_map):
+        """注销不存在的单位返回 None。"""
+        gl = GameLoop(plain_map, [_make_friendly("f1", 5, 5)])
+        assert gl.unregister_unit("no_such_unit") is None

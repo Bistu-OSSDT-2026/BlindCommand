@@ -13,13 +13,13 @@ BlindCommand 迷雾与视野管理 — IFogOfWar 接口的具体实现
 
 约束：不直接 emit 事件，不依赖 src/battle/ 或 src/ui/
 
-版本：v0.1.0（对齐 CORE_SPEC.md §7）
+版本：v0.2.0（对齐 CORE_SPEC.md §7，CP-2：性能注释 + 边界加固）
 """
 
 from __future__ import annotations
 
 import random
-from typing import Callable, Optional
+from typing import Callable
 
 from src.core.constants import (
     FOG_POSITION_ERROR_RADIUS,

@@ -29,9 +29,10 @@ BlindCommand 全局事件总线
 
 import logging
 from collections import defaultdict
+from contextlib import suppress
 from typing import Any, Callable
 
-from src.core.constants import EVENT_PAYLOAD_MAP, GameEventType
+from src.core.constants import GameEventType
 
 logger = logging.getLogger(__name__)
 
@@ -86,10 +87,8 @@ class EventBus:
             self._pending_operations.append(("unsubscribe", event_type, handler))
             return
 
-        try:
+        with suppress(ValueError):
             self._handlers[event_type].remove(handler)
-        except ValueError:
-            pass  # 未订阅过，忽略
 
     def emit(self, event_type: GameEventType, payload: Any = None) -> None:
         """广播事件。
@@ -136,10 +135,8 @@ class EventBus:
                 if h not in self._handlers[et]:
                     self._handlers[et].append(h)
             elif op == "unsubscribe":
-                try:
+                with suppress(ValueError):
                     self._handlers[et].remove(h)
-                except ValueError:
-                    pass
 
     def clear_all(self) -> None:
         """清空所有订阅（仅用于测试重置）。"""
