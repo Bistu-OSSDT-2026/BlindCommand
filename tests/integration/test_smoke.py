@@ -19,6 +19,7 @@ from src.battle.battle_system import BattleSystem
 from src.battle.unit_manager import UnitManager
 from src.battle.units import Infantry
 from src.core.constants import (
+    CommandType,
     Coordinate,
     Faction,
     GameEventType,
@@ -464,3 +465,129 @@ class TestFromMapFileFactory:
         # 验证友军单位对己方可见
         for u in gl.get_all_units(Faction.FRIENDLY):
             assert fog.is_unit_visible(u, Faction.FRIENDLY) is True
+
+
+# ============================================================================
+# S4 — Sprint 2: Commander + AI 集成
+# ============================================================================
+
+
+class TestCommanderIntegration:
+    """S4: 指令系统 + AI 集成冒烟测试。"""
+
+    @staticmethod
+    def _make_combat_resolver(bs: BattleSystem):
+        """创建 adapter：BattleSystem.process_all_battles → IGameState hook。"""
+        def resolver(state):
+            bs.process_all_battles(state.get_current_turn())
+        return resolver
+
+    def test_commander_move_and_event(self, game_map):
+        """通过 Commander 下达 MOVE 指令 → 验证 COMMAND_SENT 事件广播。"""
+        from src.battle.commander import Commander
+
+        um = UnitManager(game_map)
+        f = um.create_unit(
+            UnitType.INFANTRY, "f_inf", "第一步兵连", Faction.FRIENDLY, Coordinate(5, 5)
+        )
+        e = um.create_unit(
+            UnitType.INFANTRY, "e_inf", "敌军步兵A", Faction.ENEMY, Coordinate(8, 8)
+        )
+
+        cmdr = Commander(unit_manager=um, game_map=game_map, seed=42)
+
+        sent_events = []
+
+        def on_command_sent(payload):
+            sent_events.append(payload)
+
+        event_bus.subscribe(GameEventType.COMMAND_SENT, on_command_sent)
+
+        result = cmdr.issue_command("f_inf", CommandType.MOVE, {"x": 7, "y": 5})
+        assert result is True
+        assert len(sent_events) == 1
+        assert sent_events[0].target_unit_id == "f_inf"
+        assert sent_events[0].command_type == "MOVE"
+
+    def test_commander_with_game_loop_hook(self, game_map):
+        """GameLoop 注入 Commander → 回合推进 → COMMAND_ARRIVED 事件触发。"""
+        from src.battle.commander import Commander
+
+        um = UnitManager(game_map)
+        f = um.create_unit(
+            UnitType.INFANTRY, "f_inf", "第一步兵连", Faction.FRIENDLY, Coordinate(5, 5)
+        )
+        e = um.create_unit(
+            UnitType.INFANTRY, "e_inf", "敌军步兵A", Faction.ENEMY, Coordinate(8, 8)
+        )
+
+        cmdr = Commander(unit_manager=um, game_map=game_map, seed=42)
+        units = um.get_all_units()
+
+        arrived_events = []
+
+        def on_arrived(payload):
+            arrived_events.append(payload)
+
+        event_bus.subscribe(GameEventType.COMMAND_ARRIVED, on_arrived)
+
+        # 下达 MOVE 指令
+        cmdr.issue_command("f_inf", CommandType.MOVE, {"x": 6, "y": 5})
+
+        gl = GameLoop(game_map, units, commander=cmdr)
+        # 跑足够多回合确保指令到达（延迟 1~3 回合）
+        for _ in range(10):
+            result = gl.run_turn()
+            if result is not None:
+                break
+
+        assert len(arrived_events) >= 1, (
+            f"10 回合内应有至少 1 条 COMMAND_ARRIVED，实际 {len(arrived_events)}"
+        )
+
+    def test_ai_integration_with_game_loop(self, game_map):
+        """GameLoop 注入 EnemyAI → AI 自动为敌军下达指令。"""
+        from src.battle.ai import EnemyAI
+        from src.battle.commander import Commander
+
+        um = UnitManager(game_map)
+        f = um.create_unit(
+            UnitType.INFANTRY, "f_inf", "第一步兵连", Faction.FRIENDLY, Coordinate(5, 5)
+        )
+        e = um.create_unit(
+            UnitType.INFANTRY, "e_inf", "敌军步兵A", Faction.ENEMY, Coordinate(8, 8)
+        )
+
+        cmdr = Commander(unit_manager=um, game_map=game_map, seed=42)
+        units = um.get_all_units()
+        gl = GameLoop(game_map, units, commander=cmdr)
+        rq = gl.get_range_query()
+
+        ai = EnemyAI(
+            unit_manager=um,
+            range_query=rq,
+            game_map=game_map,
+            commander=cmdr,
+            seed=42,
+        )
+
+        sent_events = []
+
+        def on_sent(payload):
+            sent_events.append(payload)
+
+        event_bus.subscribe(GameEventType.COMMAND_SENT, on_sent)
+
+        # 重新构造 GameLoop，注入 ai_decider
+        gl2 = GameLoop(game_map, units, commander=cmdr, ai_decider=ai.decide_all)
+
+        for _ in range(5):
+            result = gl2.run_turn()
+            if result is not None:
+                break
+
+        # AI 应为敌军单位下达了指令
+        ai_commands = [e for e in sent_events if e.target_unit_id == "e_inf"]
+        assert len(ai_commands) >= 1, (
+            f"5 回合内 AI 应为敌军下达至少 1 条指令，实际 {len(ai_commands)}"
+        )

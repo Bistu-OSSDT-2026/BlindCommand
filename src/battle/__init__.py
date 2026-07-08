@@ -5,12 +5,15 @@ src/battle — 战斗业务层（#3 负责）
     - units:         兵种子类 (Infantry, Cavalry, Artillery, Scout, HQ)
     - unit_manager:  单位实例管理器 (UnitManager)
     - battle_system: 对战结算系统 (BattleSystem)
-    - commander:     指令解析与执行 (Commander) — 待实现
-    - command_queue: 通信延迟队列 (CommandQueue) — 待实现
-    - ai:            敌军 AI 决策 (EnemyAI) — 待实现
+    - commander:     指令解析与执行 (Commander)
+    - command_queue: 通信延迟队列 (CommandQueue)
+    - ai:            敌军 AI 决策 (EnemyAI)
 """
 
+from src.battle.ai import EnemyAI
 from src.battle.battle_system import BattleSystem, calculate_damage
+from src.battle.command_queue import CommandQueue
+from src.battle.commander import Command, Commander
 from src.battle.unit_manager import UnitManager
 from src.battle.units import HQ, Artillery, Cavalry, Infantry, Scout, Unit
 
@@ -19,6 +22,10 @@ __all__ = [
     "BattleSystem",
     "calculate_damage",
     "Cavalry",
+    "Command",
+    "Commander",
+    "CommandQueue",
+    "EnemyAI",
     "HQ",
     "Infantry",
     "Scout",
