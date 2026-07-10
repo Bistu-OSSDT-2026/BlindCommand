@@ -11,10 +11,7 @@ from __future__ import annotations
 
 import logging
 
-from src.core.constants import (
-    COMBAT_MIN_DAMAGE,
-    UnitType,
-)
+from src.core.constants import COMBAT_MIN_DAMAGE, UnitType
 from src.core.interfaces import IUnit
 
 logger = logging.getLogger(__name__)

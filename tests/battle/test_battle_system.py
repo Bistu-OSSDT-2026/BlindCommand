@@ -17,12 +17,7 @@ from unittest.mock import MagicMock, patch
 from src.battle.battle_system import BattleSystem, calculate_damage
 from src.battle.unit_manager import UnitManager
 from src.battle.units import HQ, Artillery, Cavalry, Infantry, Scout
-from src.core.constants import (
-    COMBAT_ROUT_HP_RATIO,
-    BattleOutcome,
-    Coordinate,
-    Faction,
-)
+from src.core.constants import COMBAT_ROUT_HP_RATIO, BattleOutcome, Coordinate, Faction
 
 # ============================================================================
 # 测试夹具

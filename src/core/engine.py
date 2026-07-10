@@ -38,14 +38,7 @@ from src.core.constants import (
 )
 from src.core.event_bus import event_bus
 from src.core.fog_of_war import FogOfWar
-from src.core.interfaces import (
-    ICommander,
-    IEngine,
-    IGameState,
-    IMap,
-    IRangeQuery,
-    IUnit,
-)
+from src.core.interfaces import ICommander, IEngine, IGameState, IMap, IRangeQuery, IUnit
 from src.core.range_utils import RangeQuery
 
 logger = logging.getLogger(__name__)

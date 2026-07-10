@@ -8,13 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.core.constants import (
-    FOG_POSITION_ERROR_RADIUS,
-    UNIT_STATS,
-    Coordinate,
-    Faction,
-    UnitType,
-)
+from src.core.constants import FOG_POSITION_ERROR_RADIUS, UNIT_STATS, Coordinate, Faction, UnitType
 from src.core.fog_of_war import FogOfWar
 from src.core.map import GameMap
 from src.core.unit_base import UnitBase

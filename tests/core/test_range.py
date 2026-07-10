@@ -8,12 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.core.constants import (
-    UNIT_STATS,
-    Coordinate,
-    Faction,
-    UnitType,
-)
+from src.core.constants import UNIT_STATS, Coordinate, Faction, UnitType
 from src.core.range_utils import RangeQuery
 from src.core.unit_base import UnitBase
 

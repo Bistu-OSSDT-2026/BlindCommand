@@ -14,14 +14,7 @@ BlindCommand 抽象接口契约 — 层间隔离的唯一合约
 from abc import ABC, abstractmethod
 from typing import Callable, Optional
 
-from src.core.constants import (
-    CommandType,
-    Coordinate,
-    Faction,
-    GameResult,
-    TerrainType,
-    UnitType,
-)
+from src.core.constants import CommandType, Coordinate, Faction, GameResult, TerrainType, UnitType
 
 # ============================================================================
 # 第一部分：单位接口（#2 实现基类，#3 通过继承实现具体兵种）

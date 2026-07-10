@@ -13,13 +13,7 @@ from typing import Optional
 
 from noise import pnoise2
 
-from src.core.constants import (
-    MAP_MAX_SIZE,
-    MAP_MIN_SIZE,
-    Coordinate,
-    Faction,
-    TerrainType,
-)
+from src.core.constants import MAP_MAX_SIZE, MAP_MIN_SIZE, Coordinate, Faction, TerrainType
 
 
 class MapGenerator:

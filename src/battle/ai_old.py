@@ -27,12 +27,7 @@ from typing import Optional
 
 from src.battle.commander import Commander
 from src.battle.unit_manager import UnitManager
-from src.core.constants import (
-    COMBAT_ROUT_HP_RATIO,
-    CommandType,
-    Coordinate,
-    Faction,
-)
+from src.core.constants import COMBAT_ROUT_HP_RATIO, CommandType, Coordinate, Faction
 from src.core.interfaces import IGameState, IMap, IRangeQuery, IUnit
 
 logger = logging.getLogger(__name__)

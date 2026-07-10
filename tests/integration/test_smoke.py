@@ -19,14 +19,7 @@ import pytest
 from src.battle.battle_system import BattleSystem
 from src.battle.unit_manager import UnitManager
 from src.battle.units import Infantry
-from src.core.constants import (
-    CommandType,
-    Coordinate,
-    Faction,
-    GameEventType,
-    GameResult,
-    UnitType,
-)
+from src.core.constants import CommandType, Coordinate, Faction, GameEventType, GameResult, UnitType
 from src.core.event_bus import event_bus
 from src.core.game_loop import GameLoop
 from src.core.map import GameMap
@@ -363,10 +356,7 @@ class TestFromMapFileFactory:
         """从 map_01.json 一键创建 GameLoop，验证单位正确加载。"""
         from pathlib import Path
 
-        from src.core.constants import (
-            DEFAULT_MAP_FILE,
-            Faction,
-        )
+        from src.core.constants import DEFAULT_MAP_FILE, Faction
 
         # 使用项目自带的地图文件
         map_path = Path(DEFAULT_MAP_FILE)

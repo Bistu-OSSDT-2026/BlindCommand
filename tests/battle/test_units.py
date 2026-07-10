@@ -18,13 +18,7 @@ import pytest
 
 from src.battle.unit_manager import _create_unit_instance
 from src.battle.units import HQ, Artillery, Cavalry, Infantry, Scout, Unit
-from src.core.constants import (
-    UNIT_DISPLAY_NAMES,
-    UNIT_STATS,
-    Coordinate,
-    Faction,
-    UnitType,
-)
+from src.core.constants import UNIT_DISPLAY_NAMES, UNIT_STATS, Coordinate, Faction, UnitType
 
 # ============================================================================
 # 测试夹具

@@ -10,13 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.core.constants import (
-    COMBAT_MIN_DAMAGE,
-    UNIT_STATS,
-    Coordinate,
-    Faction,
-    UnitType,
-)
+from src.core.constants import COMBAT_MIN_DAMAGE, UNIT_STATS, Coordinate, Faction, UnitType
 from src.core.interfaces import IMap
 from src.core.unit_base import UnitBase
 
