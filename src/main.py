@@ -58,7 +58,7 @@ def main() -> None:
 
         # 击杀计数
         kills = 0
-        initial_enemy = len(engine.get_all_units(Faction.ENEMY))
+        len(engine.get_all_units(Faction.ENEMY))
         def _on_kill(payload):
             nonlocal kills
             if payload and getattr(payload, "faction", "") == "ENEMY":

@@ -79,7 +79,7 @@ from src.core.constants import (
 from src.core.event_bus import event_bus
 
 if TYPE_CHECKING:
-    from src.core.interfaces import IEngine, IMap, IUnit
+    from src.core.interfaces import IMap
     from src.ui.marker import MarkerSystem
 
 logger = logging.getLogger(__name__)
@@ -894,7 +894,7 @@ class MapWidget:
         ]
 
         for effect in self._combat_effects:
-            elapsed = now_ms - effect.start_ms
+            now_ms - effect.start_ms
             t = effect.progress
 
             px = effect.coord.x * self._tile_size

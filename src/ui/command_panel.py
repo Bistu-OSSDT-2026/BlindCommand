@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Optional
 
 import pygame
+import contextlib
 
 _SHORT_NAMES = {
     "第一步兵连": "1连", "第二步兵连": "2连", "第三步兵连": "3连", "第四步兵连": "4连",
@@ -35,10 +36,8 @@ class CommandPanel:
         self._target_coord = None
         self._font: Optional[pygame.font.Font] = None
         self._clicked: Optional[str] = None
-        try:
+        with contextlib.suppress(Exception):
             self._font = pygame.font.Font(FONT_PATH, FONT_SIZE)
-        except Exception:
-            pass
 
     def show(self, screen_pos: tuple[int, int], unit_names: list[str]) -> None:
         x, y = screen_pos

@@ -12,7 +12,6 @@ from __future__ import annotations
 import logging
 import random
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
 
 from src.core.constants import (
     COMMAND_DELAY_MAX,
@@ -22,7 +21,6 @@ from src.core.constants import (
     CommandType,
     Coordinate,
     Direction,
-    Faction,
     GameEventType,
 )
 from src.core.event_bus import event_bus
@@ -72,7 +70,6 @@ class Command:  # 不继承 ICommand，避免 dataclass-ABC 冲突
         return True  # 由 Commander._execute 处理
 
     def get_human_description(self) -> str:
-        cmd = self.command_type.value
         if self.command_type == CommandType.MOVE:
             d = self.params.get("direction", "?")
             dist = self.params.get("distance", "?")

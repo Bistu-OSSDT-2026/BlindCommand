@@ -7,11 +7,10 @@ BattleLogPanel — RTT 战报面板（原生 pygame 渲染，支持中文）
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Optional
 
 import pygame
 
-from src.core.constants import BATTLE_LOG_MAX_LINES, GameEventType, TerrainType
+from src.core.constants import BATTLE_LOG_MAX_LINES, GameEventType
 from src.core.event_bus import event_bus
 
 logger = logging.getLogger(__name__)

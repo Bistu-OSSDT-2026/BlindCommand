@@ -229,7 +229,7 @@ class TestCommander:
         """下达指令后队列中有该指令。"""
         fm = _make_fake_map()
         um = UnitManager(fm)
-        unit = um.create_unit(
+        um.create_unit(
             UnitType.INFANTRY, "inf_1", "第一步兵连", Faction.FRIENDLY, _make_coord(5, 5)
         )
         cmdq = CommandQueue(seed=42)
@@ -258,7 +258,7 @@ class TestCommander:
         """HQ 不可下达移动类指令。"""
         fm = _make_fake_map()
         um = UnitManager(fm)
-        hq = um.create_unit(
+        um.create_unit(
             UnitType.HQ, "hq_1", "指挥所", Faction.FRIENDLY, _make_coord(0, 0)
         )
         cmdr = Commander(unit_manager=um, game_map=fm)
@@ -290,10 +290,10 @@ class TestCommander:
         fm = _make_fake_map()
         fm.find_path.return_value = []
         um = UnitManager(fm)
-        unit = um.create_unit(
+        um.create_unit(
             UnitType.INFANTRY, "inf_1", "第一步兵连", Faction.FRIENDLY, _make_coord(5, 5)
         )
-        enemy = um.create_unit(
+        um.create_unit(
             UnitType.INFANTRY, "enemy_1", "敌军步兵", Faction.ENEMY, _make_coord(6, 5)
         )
 
@@ -318,7 +318,7 @@ class TestCommander:
         """单位阵亡 → 待执行指令被清除 + COMMAND_EXPIRED 事件广播。"""
         fm = _make_fake_map()
         um = UnitManager(fm)
-        unit = um.create_unit(
+        um.create_unit(
             UnitType.INFANTRY, "inf_1", "第一步兵连", Faction.FRIENDLY, _make_coord(5, 5)
         )
 
@@ -336,7 +336,7 @@ class TestCommander:
         """新指令覆盖旧指令，队列中只保留最新。"""
         fm = _make_fake_map()
         um = UnitManager(fm)
-        unit = um.create_unit(
+        um.create_unit(
             UnitType.INFANTRY, "inf_1", "第一步兵连", Faction.FRIENDLY, _make_coord(5, 5)
         )
 
@@ -646,7 +646,7 @@ class TestSprint3PatrolExecution:
         fm = _make_fake_map()
         fm.find_path.return_value = [_make_coord(5, 5), _make_coord(6, 5)]
         um = UnitManager(fm)
-        unit = um.create_unit(
+        um.create_unit(
             UnitType.INFANTRY, "patrol_inf", "巡逻步兵", Faction.ENEMY, _make_coord(5, 5)
         )
 
@@ -667,7 +667,7 @@ class TestSprint3PatrolExecution:
         """路径少于 2 个点应被拒绝。"""
         fm = _make_fake_map()
         um = UnitManager(fm)
-        unit = um.create_unit(
+        um.create_unit(
             UnitType.INFANTRY, "patrol_inf", "巡逻步兵", Faction.ENEMY, _make_coord(5, 5)
         )
 
@@ -703,7 +703,7 @@ class TestSprint3ScoutExecution:
         fm = _make_fake_map()
         fm.find_path.return_value = []
         um = UnitManager(fm)
-        unit = um.create_unit(
+        um.create_unit(
             UnitType.SCOUT, "scout_sct", "侦察兵", Faction.ENEMY, _make_coord(5, 5)
         )
 
@@ -775,10 +775,8 @@ class TestSprint3BattleSystem:
 
     def test_get_units_in_combat_range(self):
         """交战配对检测正确。"""
-        from unittest.mock import MagicMock
 
         from src.battle.battle_system import BattleSystem
-        from src.battle.units import Infantry
 
         fake_map = _make_fake_map()
         um = UnitManager(fake_map)
@@ -803,7 +801,6 @@ class TestSprint3AIEnhancements:
 
     def test_artillery_kiting(self):
         """AI1: 炮兵在近身有敌人时应后撤。"""
-        from src.battle.units import Artillery, Infantry
 
         fm = _make_fake_map()
         fm.is_passable.return_value = True
@@ -835,10 +832,10 @@ class TestSprint3AIEnhancements:
         """AI2: 多单位决策时 decide_all 正常执行。"""
         fm = _make_fake_map()
         um = UnitManager(fm)
-        e1 = um.create_unit(
+        um.create_unit(
             UnitType.INFANTRY, "enemy_1", "敌军1", Faction.ENEMY, _make_coord(5, 5)
         )
-        e2 = um.create_unit(
+        um.create_unit(
             UnitType.CAVALRY, "enemy_2", "敌军2", Faction.ENEMY, _make_coord(8, 8)
         )
 

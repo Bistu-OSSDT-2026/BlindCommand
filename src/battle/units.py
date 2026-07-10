@@ -24,7 +24,6 @@ from __future__ import annotations
 import logging
 
 from src.core.constants import (
-    COMBAT_MIN_DAMAGE,
     UNIT_DISPLAY_NAMES,
     UNIT_STATS,
     Coordinate,
