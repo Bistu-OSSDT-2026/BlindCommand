@@ -12,13 +12,7 @@ from tempfile import NamedTemporaryFile
 
 import pytest
 
-from src.core.constants import (
-    UNIT_STATS,
-    Coordinate,
-    Faction,
-    TerrainType,
-    UnitType,
-)
+from src.core.constants import UNIT_STATS, Coordinate, Faction, TerrainType, UnitType
 from src.core.map import GameMap
 from src.core.unit_base import UnitBase
 

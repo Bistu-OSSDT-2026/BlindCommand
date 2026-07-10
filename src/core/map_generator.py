@@ -9,14 +9,10 @@ import json
 import random
 from collections import deque
 from pathlib import Path
-from typing import Optional
 
 from noise import pnoise2
 
-from src.core.constants import (
-    MAP_MAX_SIZE, MAP_MIN_SIZE,
-    Coordinate, Faction, TerrainType,
-)
+from src.core.constants import MAP_MAX_SIZE, MAP_MIN_SIZE, Coordinate, TerrainType
 
 
 class MapGenerator:
@@ -275,7 +271,7 @@ class MapGenerator:
         """友军必须通 HQ_A，敌军必须通 HQ_B。8 向 BFS。"""
         dirs = [(1, 0), (-1, 0), (0, 1), (0, -1),
                 (1, 1), (-1, -1), (1, -1), (-1, 1)]
-        for tag, positions, hq in [("F", f_positions, hq_a), ("E", e_positions, hq_b)]:
+        for _tag, positions, hq in [("F", f_positions, hq_a), ("E", e_positions, hq_b)]:
             for sx, sy in positions:
                 if terrain[sy][sx] in (TerrainType.RIVER.value,):
                     return False

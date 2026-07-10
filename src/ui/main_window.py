@@ -26,7 +26,6 @@ from __future__ import annotations
 import logging
 import sys
 from pathlib import Path
-import sys
 from typing import TYPE_CHECKING, Optional
 
 import pygame
@@ -71,6 +70,7 @@ def _find_cjk_font(base_dir: Path) -> str | None:
         字体文件绝对路径，若未找到任何可用字体返回 None
     """
     import os as _os
+
     # 1) 系统字体目录（SDL 无法搜索，但绝对路径仍可加载）
     _fonts_dir = _os.environ.get("WINDIR", "C:/Windows") + "/Fonts"
     for _name in ("msyh.ttc", "msyh.ttf", "simkai.ttf", "simsun.ttc"):

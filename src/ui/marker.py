@@ -19,15 +19,7 @@ from typing import Optional
 
 import pygame
 
-from src.core.constants import (
-    COLOR_MARKER_ENEMY,
-    COLOR_MARKER_FRIENDLY,
-    COLOR_MARKER_HQ,
-    COLOR_MARKER_NOTE,
-    Coordinate,
-    MarkerType,
-    TILE_SIZE,
-)
+from src.core.constants import Coordinate, MarkerType
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +31,7 @@ def _create_font(size: int) -> pygame.font.Font:
     import os as _os
     import sys as _sys
     from pathlib import Path as _Path
+
     # 1) 系统字体目录
     _fonts_dir = _os.environ.get("WINDIR", "C:/Windows") + "/Fonts"
     for _name in ("msyh.ttc", "msyh.ttf", "simkai.ttf", "simsun.ttc"):
@@ -385,21 +378,20 @@ class MarkerSystem:
                 return True
 
         # ── 键盘事件：数字键切换选中标记类型 ────────────────────────
-        elif event.type == pygame.KEYDOWN:
-            if self._selected_marker is not None:
-                type_map: dict[int, MarkerType] = {
-                    pygame.K_1: MarkerType.FRIENDLY_GUESS,
-                    pygame.K_2: MarkerType.ENEMY_GUESS,
-                    pygame.K_3: MarkerType.HQ_GUESS,
-                    pygame.K_4: MarkerType.CUSTOM_NOTE,
-                }
-                new_type = type_map.get(event.key)
-                if new_type is not None:
-                    for m in self._markers:
-                        if m.marker_id == self._selected_marker:
-                            m.marker_type = new_type
-                            logger.debug("切换标记类型: %s → %s", m.marker_id, new_type.value)
-                            return True
+        elif event.type == pygame.KEYDOWN and self._selected_marker is not None:
+            type_map: dict[int, MarkerType] = {
+                pygame.K_1: MarkerType.FRIENDLY_GUESS,
+                pygame.K_2: MarkerType.ENEMY_GUESS,
+                pygame.K_3: MarkerType.HQ_GUESS,
+                pygame.K_4: MarkerType.CUSTOM_NOTE,
+            }
+            new_type = type_map.get(event.key)
+            if new_type is not None:
+                for m in self._markers:
+                    if m.marker_id == self._selected_marker:
+                        m.marker_type = new_type
+                        logger.debug("切换标记类型: %s → %s", m.marker_id, new_type.value)
+                        return True
 
         return False
 

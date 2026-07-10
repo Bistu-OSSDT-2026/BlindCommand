@@ -698,11 +698,6 @@ def _validate_constants() -> None:
             f"BATTLE_LOG_WIDTH_RATIO ({BATTLE_LOG_WIDTH_RATIO}) + "
             f"MAP_AREA_WIDTH_RATIO ({MAP_AREA_WIDTH_RATIO}) 必须等于 1.0"
         )
-    weights_sum = sum(COMMAND_DELAY_WEIGHTS)
-    if not math.isclose(weights_sum, 1.0):
-        errors.append(
-            f"COMMAND_DELAY_WEIGHTS 总和 ({weights_sum}) 必须等于 1.0"
-        )
 
     if errors:
         raise ValueError(

@@ -15,17 +15,11 @@
 from __future__ import annotations
 
 import pytest
+
 from src.battle.battle_system import BattleSystem
 from src.battle.unit_manager import UnitManager
 from src.battle.units import Infantry
-from src.core.constants import (
-    CommandType,
-    Coordinate,
-    Faction,
-    GameEventType,
-    GameResult,
-    UnitType,
-)
+from src.core.constants import CommandType, Coordinate, Faction, GameEventType, GameResult, UnitType
 from src.core.event_bus import event_bus
 from src.core.game_loop import GameLoop
 from src.core.map import GameMap
@@ -99,10 +93,10 @@ class TestInitialization:
     def test_assemble_game_loop_with_battle_system(self, game_map):
         """组装 GameLoop + BattleSystem，验证无异常。"""
         um = UnitManager(game_map)
-        f = um.create_unit(
+        um.create_unit(
             UnitType.INFANTRY, "f_inf", "第一步兵连", Faction.FRIENDLY, Coordinate(5, 5)
         )
-        e = um.create_unit(
+        um.create_unit(
             UnitType.INFANTRY, "e_inf", "敌军步兵A", Faction.ENEMY, Coordinate(8, 8)
         )
 
@@ -119,10 +113,10 @@ class TestInitialization:
     def test_combat_resolver_hook_wiring(self, game_map):
         """combat_resolver 钩子被 GameLoop 正确调用（阶段 5）。"""
         um = UnitManager(game_map)
-        f = um.create_unit(
+        um.create_unit(
             UnitType.INFANTRY, "f_inf", "第一步兵连", Faction.FRIENDLY, Coordinate(5, 5)
         )
-        e = um.create_unit(
+        um.create_unit(
             UnitType.INFANTRY, "e_inf", "敌军步兵A", Faction.ENEMY, Coordinate(8, 8)
         )
         units = um.get_all_units()
@@ -237,10 +231,10 @@ class TestBattleResolution:
     def test_battle_result_event_emitted(self, game_map):
         """相邻单位触发战斗，BATTLE_RESULT 事件被广播。"""
         um = UnitManager(game_map)
-        f = um.create_unit(
+        um.create_unit(
             UnitType.INFANTRY, "f_inf", "第一步兵连", Faction.FRIENDLY, Coordinate(5, 5)
         )
-        e = um.create_unit(
+        um.create_unit(
             UnitType.INFANTRY, "e_inf", "敌军步兵A", Faction.ENEMY, Coordinate(5, 6)
         )
 
@@ -273,10 +267,10 @@ class TestBattleResolution:
         """单位被击杀时 UNIT_KILLED 事件被广播。"""
         um = UnitManager(game_map)
         # 骑兵攻击高，容易击杀
-        f = um.create_unit(
+        um.create_unit(
             UnitType.CAVALRY, "f_cav", "第一骑兵连", Faction.FRIENDLY, Coordinate(5, 5)
         )
-        e = um.create_unit(
+        um.create_unit(
             UnitType.SCOUT, "e_sct", "敌军侦察兵", Faction.ENEMY, Coordinate(5, 6)
         )
         # Scout: HP=5, Def=1; Cavalry: Atk=4 → raw=3, 两击可杀
@@ -311,10 +305,10 @@ class TestBattleResolution:
     def test_game_over_on_total_annihilation(self, game_map):
         """一方全军覆没时触发 GAME_OVER 事件。"""
         um = UnitManager(game_map)
-        f = um.create_unit(
+        um.create_unit(
             UnitType.CAVALRY, "f_cav", "第一骑兵连", Faction.FRIENDLY, Coordinate(5, 5)
         )
-        e = um.create_unit(
+        um.create_unit(
             UnitType.SCOUT, "e_sct", "敌军侦察兵", Faction.ENEMY, Coordinate(5, 6)
         )
 
@@ -362,10 +356,7 @@ class TestFromMapFileFactory:
         """从 map_01.json 一键创建 GameLoop，验证单位正确加载。"""
         from pathlib import Path
 
-        from src.core.constants import (
-            DEFAULT_MAP_FILE,
-            Faction,
-        )
+        from src.core.constants import DEFAULT_MAP_FILE, Faction
 
         # 使用项目自带的地图文件
         map_path = Path(DEFAULT_MAP_FILE)
@@ -487,10 +478,10 @@ class TestCommanderIntegration:
         from src.battle.commander import Commander
 
         um = UnitManager(game_map)
-        f = um.create_unit(
+        um.create_unit(
             UnitType.INFANTRY, "f_inf", "第一步兵连", Faction.FRIENDLY, Coordinate(5, 5)
         )
-        e = um.create_unit(
+        um.create_unit(
             UnitType.INFANTRY, "e_inf", "敌军步兵A", Faction.ENEMY, Coordinate(8, 8)
         )
 
@@ -514,10 +505,10 @@ class TestCommanderIntegration:
         from src.battle.commander import Commander
 
         um = UnitManager(game_map)
-        f = um.create_unit(
+        um.create_unit(
             UnitType.INFANTRY, "f_inf", "第一步兵连", Faction.FRIENDLY, Coordinate(5, 5)
         )
-        e = um.create_unit(
+        um.create_unit(
             UnitType.INFANTRY, "e_inf", "敌军步兵A", Faction.ENEMY, Coordinate(8, 8)
         )
 
@@ -551,10 +542,10 @@ class TestCommanderIntegration:
         from src.battle.commander import Commander
 
         um = UnitManager(game_map)
-        f = um.create_unit(
+        um.create_unit(
             UnitType.INFANTRY, "f_inf", "第一步兵连", Faction.FRIENDLY, Coordinate(5, 5)
         )
-        e = um.create_unit(
+        um.create_unit(
             UnitType.INFANTRY, "e_inf", "敌军步兵A", Faction.ENEMY, Coordinate(8, 8)
         )
 

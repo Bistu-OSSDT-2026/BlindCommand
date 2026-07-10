@@ -79,8 +79,8 @@ class EnemyAI:
         stuck = self._stuck_count.get(uid, 0) >= 2
 
         # ── 1. 低血量撤退 ───────────────────────────────────────
-        if unit.hp_ratio < COMBAT_ROUT_HP_RATIO and not unit.is_hq:
-            if self._rng.random() < COMBAT_ROUT_CHANCE:
+        if (unit.hp_ratio < COMBAT_ROUT_HP_RATIO and not unit.is_hq
+                and self._rng.random() < COMBAT_ROUT_CHANCE):
                 hq = self._map.get_faction_hq_location(unit.faction)
                 if hq:
                     self._retreated.add(unit.unit_id)
@@ -89,8 +89,9 @@ class EnemyAI:
                     return
 
         # ── 困难：撤退后反扑 ──────────────────────────────────────
-        if self._diff == "困难" and unit.unit_id in self._retreated:
-            if unit.hp_ratio > 0.5 and not self._rq.has_enemy_in_range(unit, unit.attack_range):
+        if (self._diff == "困难" and unit.unit_id in self._retreated
+                and unit.hp_ratio > 0.5
+                and not self._rq.has_enemy_in_range(unit, unit.attack_range)):
                 self._retreated.discard(unit.unit_id)
                 # 反扑
                 enemy_hq = self._map.get_faction_hq_location(
@@ -195,10 +196,14 @@ class EnemyAI:
         if ay > 2 * ax:
             return "S" if dy > 0 else "N"
         parts = []
-        if dy < 0: parts.append("N")
-        if dy > 0: parts.append("S")
-        if dx < 0: parts.append("W")
-        if dx > 0: parts.append("E")
+        if dy < 0:
+            parts.append("N")
+        if dy > 0:
+            parts.append("S")
+        if dx < 0:
+            parts.append("W")
+        if dx > 0:
+            parts.append("E")
         return "".join(parts) if parts else "N"
 
     def _issue(self, unit, cmd_type, params, current_time):

@@ -63,7 +63,7 @@ def show_level_select() -> dict | None:
         screen.blit(title, ((800 - title.get_width()) // 2, 60))
 
         # 按钮
-        for i, (lv, r) in enumerate(zip(LEVELS, btns)):
+        for i, (lv, r) in enumerate(zip(LEVELS, btns, strict=False)):
             hover = r.collidepoint(mouse_pos)
             color = COLOR_BTN_HOVER if hover else COLOR_BTN
             pygame.draw.rect(screen, color, r, border_radius=8)

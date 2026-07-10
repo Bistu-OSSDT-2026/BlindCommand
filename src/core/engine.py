@@ -27,8 +27,8 @@ from src.core.constants import (
     AI_TICK_IDLE,
     COMBAT_ENGAGE_DELAY,
     COMBAT_ROUND_INTERVAL,
-    REPORT_INTERVAL_MIN,
     REPORT_INTERVAL_MAX,
+    REPORT_INTERVAL_MIN,
     Coordinate,
     Faction,
     GameEventType,
@@ -38,14 +38,7 @@ from src.core.constants import (
 )
 from src.core.event_bus import event_bus
 from src.core.fog_of_war import FogOfWar
-from src.core.interfaces import (
-    ICommander,
-    IEngine,
-    IGameState,
-    IMap,
-    IRangeQuery,
-    IUnit,
-)
+from src.core.interfaces import ICommander, IEngine, IGameState, IMap, IRangeQuery, IUnit
 from src.core.range_utils import RangeQuery
 
 logger = logging.getLogger(__name__)

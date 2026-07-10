@@ -23,14 +23,7 @@ from __future__ import annotations
 
 import logging
 
-from src.core.constants import (
-    COMBAT_MIN_DAMAGE,
-    UNIT_DISPLAY_NAMES,
-    UNIT_STATS,
-    Coordinate,
-    Faction,
-    UnitType,
-)
+from src.core.constants import UNIT_DISPLAY_NAMES, UNIT_STATS, Coordinate, Faction, UnitType
 from src.core.interfaces import IMap, IUnit
 from src.core.unit_base import UnitBase
 
@@ -109,9 +102,9 @@ class Unit(UnitBase):
             return f"{self._name} 已阵亡"
 
         hp_ratio = self.hp_ratio
-        if hp_ratio >= COMBAT_HEALTHY_HP_RATIO:
+        if hp_ratio >= 0.7:
             status = "状态良好"
-        elif hp_ratio >= COMBAT_CRITICAL_HP_RATIO:
+        elif hp_ratio >= 0.3:
             status = "轻微受损"
         else:
             status = "损失惨重"

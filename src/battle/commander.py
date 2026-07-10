@@ -12,18 +12,16 @@ from __future__ import annotations
 import logging
 import random
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
 
 from src.core.constants import (
     COMMAND_DELAY_MAX,
     COMMAND_DELAY_MIN,
+    CommandArrivedPayload,
+    CommandSentPayload,
     CommandType,
     Coordinate,
     Direction,
-    Faction,
     GameEventType,
-    CommandSentPayload,
-    CommandArrivedPayload,
 )
 from src.core.event_bus import event_bus
 from src.core.interfaces import ICommand, ICommander, IGameState, IMap, IUnit
@@ -72,7 +70,6 @@ class Command:  # 不继承 ICommand，避免 dataclass-ABC 冲突
         return True  # 由 Commander._execute 处理
 
     def get_human_description(self) -> str:
-        cmd = self.command_type.value
         if self.command_type == CommandType.MOVE:
             d = self.params.get("direction", "?")
             dist = self.params.get("distance", "?")
@@ -232,7 +229,7 @@ class Commander(ICommander):
             tx = max(0, min(self._map.width - 1, tx))
             ty = max(0, min(self._map.height - 1, ty))
             target = Coordinate(tx, ty)
-            if self._map.is_passable(target) and hasattr(unit, 'set_destination'):
-                if unit.set_destination(target):
+            if (self._map.is_passable(target) and hasattr(unit, 'set_destination')
+                    and unit.set_destination(target)):
                     return f"{unit.name} 向{direction}方向撤退！"
         return f"{unit.name} 无法撤退"

@@ -20,11 +20,7 @@ from __future__ import annotations
 import random
 from typing import TYPE_CHECKING
 
-from src.core.constants import (
-    COMMAND_DELAY_MAX,
-    COMMAND_DELAY_MIN,
-    COMMAND_DELAY_WEIGHTS,
-)
+from src.core.constants import COMMAND_DELAY_MAX, COMMAND_DELAY_MIN, COMMAND_DELAY_WEIGHTS
 
 if TYPE_CHECKING:
     from src.battle.commander import Command
