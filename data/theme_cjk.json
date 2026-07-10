@@ -1,0 +1,10 @@
+{
+    "defaults": {
+        "font": {
+            "name": "C:/Windows/Fonts/simhei.ttf",
+            "size": 14,
+            "bold": false,
+            "italic": false
+        }
+    }
+}

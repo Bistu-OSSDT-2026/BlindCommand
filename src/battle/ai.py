@@ -1,231 +1,205 @@
 """
-敌军 AI 决策系统 — 行为树驱动的自动决策
-=========================================
-本模块提供 `EnemyAI` 类：每回合为所有存活的敌军单位运行行为树，
-通过 Commander 下达指令（走相同的 CommandQueue 延迟系统）。
-
-行为树优先级（从高到低）：
-    1. 溃逃（HP < 20%）→ RETREAT 向己方 HQ
-    2. 战斗（攻击范围内有敌人）→ ATTACK 最近敌人
-    3. 保卫（己方 HQ 附近有敌人）→ MOVE 回防 HQ
-    4. 默认 → 50% MOVE 向敌方 HQ / 50% PATROL 当前区域
-
-依赖:
-    src/core/constants.py   — COMBAT_ROUT_HP_RATIO, Faction, Coordinate, CommandType
-    src/core/interfaces.py  — IUnit, IMap, IRangeQuery
-    src/battle/commander.py — Commander
-    src/battle/unit_manager.py — UnitManager
-
-版本: v0.1.0
+RTT 敌军 AI — 兵种差异化 + 协同 + 战况判断 + 难度分层
+=========================================================
+简单: 向HQ推进 + 撤退
+中等: + HQ优先攻击 + 集火
+困难: + 炮兵距离保持 + 包夹 + 回防 + 撤退反扑
 """
 
 from __future__ import annotations
 
 import logging
 import random
-from typing import Optional
 
-from src.battle.commander import Commander
-from src.battle.unit_manager import UnitManager
 from src.core.constants import (
+    COMBAT_ROUT_CHANCE,
     COMBAT_ROUT_HP_RATIO,
     CommandType,
     Coordinate,
     Faction,
+    UnitType,
 )
-from src.core.interfaces import IGameState, IMap, IRangeQuery, IUnit
+from src.core.interfaces import ICommander, IGameState, IMap, IRangeQuery, IUnit
 
 logger = logging.getLogger(__name__)
 
+_DIRS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+
 
 class EnemyAI:
-    """敌军 AI 决策系统。
-
-    每回合由 GameLoop 在阶段 2（AI 决策）通过 ai_decider 钩子调用 decide_all()。
-    为每个存活敌军运行行为树，通过 Commander.issue_command() 下达指令。
-    """
-
-    # ── __init__ ───────────────────────────────────────────────────────
+    """RTT 敌军 AI。"""
 
     def __init__(
-        self,
-        unit_manager: UnitManager,
-        range_query: IRangeQuery,
-        game_map: IMap,
-        commander: Commander,
-        seed: int | None = None,
+        self, game_map: IMap, range_query: IRangeQuery,
+        commander: ICommander, difficulty: str = "中等", seed: int | None = None,
     ) -> None:
-        """初始化 AI 决策系统。
-
-        Args:
-            unit_manager: 单位管理器（获取存活敌军、HQ 等）
-            range_query: 范围检索接口（#2 实现，用于索敌）
-            game_map: 地图接口（#2 实现，用于获取 HQ 坐标）
-            commander: 指令系统（AI 通过它下达指令）
-            seed: 随机种子（测试用，用于 PATROL 方向选择等）
-        """
-        self._unit_manager = unit_manager
-        self._range_query = range_query
         self._map = game_map
+        self._rq = range_query
         self._commander = commander
+        self._diff = difficulty
         self._rng = random.Random(seed)
-
-        logger.info("EnemyAI 初始化完成")
-
-    # ── 主入口 ──────────────────────────────────────────────────────────
+        # 撤退过的单位（困难：撤退后反扑）
+        self._retreated: set[str] = set()
+        self._last_pos: dict[str, Coordinate] = {}
+        self._stuck_count: dict[str, int] = {}
 
     def decide_all(self, game_state: IGameState) -> None:
-        """为所有存活的敌军单位决策并下达指令。
+        current_time = game_state.get_elapsed_time()
+        all_units = []
+        friendly = []
+        if hasattr(game_state, 'get_all_units'):
+            all_units = game_state.get_all_units(Faction.ENEMY)
+            friendly = game_state.get_all_units(Faction.FRIENDLY)
 
-        由 GameLoop 在阶段 2 调用（作为 ai_decider 钩子）。
-        GameLoop 将自身作为 IGameState 传入。
+        alive = [u for u in all_units if u.is_alive]
+        alive_f = [u for u in friendly if u.is_alive]
+        advantage = len(alive) > len(alive_f) * 1.3
+        disadvantage = len(alive) < len(alive_f) * 0.7
 
-        Args:
-            game_state: 当前游戏状态（IGameState 查询接口）
-        """
-        current_turn = game_state.get_current_turn()
-        enemies = self._unit_manager.get_units_by_faction(Faction.ENEMY)
-        if not enemies:
-            return
-
-        for unit in enemies:
-            if not unit.is_alive:
+        for unit in alive:
+            if unit.is_hq:
                 continue
-
             try:
-                cmd_type, params = self.decide_for_unit(unit, current_turn)
-                if cmd_type is not None:
-                    self._commander.issue_command(
-                        unit_id=unit.unit_id,
-                        command_type=cmd_type,
-                        params=params,
-                        current_turn=current_turn,
-                    )
-                    logger.debug(
-                        "AI: %s → %s params=%s",
-                        unit.name,
-                        cmd_type.value,
-                        params,
-                    )
+                self._decide_one(unit, current_time, advantage, disadvantage, alive_f)
             except Exception:
                 logger.exception("AI 决策异常: %s", unit.name)
 
-    # ── 单单位决策 ──────────────────────────────────────────────────────
+    def _decide_one(
+        self, unit: IUnit, t: float, advantage: bool, disadvantage: bool,
+        enemies: list[IUnit],
+    ) -> None:
+        # ── 防卡检测 ───────────────────────────────────────────
+        uid = unit.unit_id
+        prev = self._last_pos.get(uid)
+        if prev is not None and prev == unit.position:
+            self._stuck_count[uid] = self._stuck_count.get(uid, 0) + 1
+        else:
+            self._stuck_count[uid] = 0
+        self._last_pos[uid] = unit.position
+        stuck = self._stuck_count.get(uid, 0) >= 2
 
-    def decide_for_unit(
-        self, unit: IUnit, current_turn: int
-    ) -> tuple[CommandType | None, dict]:
-        """为单个敌军单位做出决策（行为树）。
-
-        Args:
-            unit: 敌军单位
-            current_turn: 当前回合数（备用，暂未使用）
-
-        Returns:
-            (指令类型, 参数字典)；若无需行动返回 (None, {})
-        """
-        # ── 优先级 1：溃逃 ────────────────────────────────────────
+        # ── 1. 低血量撤退 ───────────────────────────────────────
         if unit.hp_ratio < COMBAT_ROUT_HP_RATIO and not unit.is_hq:
-            direction = self._direction_toward_own_hq(unit)
-            if direction:
-                return (CommandType.RETREAT, {"direction": direction})
+            if self._rng.random() < COMBAT_ROUT_CHANCE:
+                hq = self._map.get_faction_hq_location(unit.faction)
+                if hq:
+                    self._retreated.add(unit.unit_id)
+                    self._issue(unit, CommandType.RETREAT,
+                                {"direction": self._dir_to(unit, hq)}, t)
+                    return
 
-        # ── 优先级 2：战斗 ────────────────────────────────────────
-        if self._range_query.has_enemy_in_range(unit, unit.attack_range):
-            enemy = self._range_query.find_nearest_enemy(unit)
-            if enemy is not None:
-                return (
-                    CommandType.ATTACK,
-                    {"x": enemy.position.x, "y": enemy.position.y},
-                )
+        # ── 困难：撤退后反扑 ──────────────────────────────────────
+        if self._diff == "困难" and unit.unit_id in self._retreated:
+            if unit.hp_ratio > 0.5 and not self._rq.has_enemy_in_range(unit, unit.attack_range):
+                self._retreated.discard(unit.unit_id)
+                # 反扑
+                enemy_hq = self._map.get_faction_hq_location(
+                    Faction.FRIENDLY if unit.faction == Faction.ENEMY else Faction.ENEMY)
+                if enemy_hq:
+                    self._issue(unit, CommandType.MOVE,
+                                {"direction": self._dir_to(unit, enemy_hq), "distance": 3}, t)
+                    return
 
-        # ── 优先级 3：保卫 HQ ─────────────────────────────────────
-        own_hq = self._unit_manager.get_hq(Faction.ENEMY)
-        if own_hq is not None and own_hq.is_alive:
-            if self._range_query.has_enemy_in_range(own_hq, radius=5):
-                # 回防 HQ
-                return (
-                    CommandType.MOVE,
-                    {"x": own_hq.position.x, "y": own_hq.position.y},
-                )
+        # ── 2. 战斗中不动 ────────────────────────────────────────
+        if self._rq.has_enemy_in_range(unit, unit.attack_range):
+            return
 
-        # ── 优先级 4：默认行动 ────────────────────────────────────
-        if self._rng.random() < 0.5:
-            # 向敌方 HQ 推进
-            enemy_hq_coord = self._map.get_faction_hq_location(Faction.FRIENDLY)
-            if enemy_hq_coord is not None:
-                return (
-                    CommandType.MOVE,
-                    {"x": enemy_hq_coord.x, "y": enemy_hq_coord.y},
-                )
+        # ── 3. 劣势 → 收缩 ───────────────────────────────────────
+        if disadvantage:
+            hq = self._map.get_faction_hq_location(unit.faction)
+            if hq:
+                self._issue(unit, CommandType.MOVE,
+                            {"direction": self._dir_to(unit, hq), "distance": 3}, t)
+                return
 
-        # 巡逻当前区域
-        patrol_path = self._generate_patrol_path(unit)
-        return (CommandType.PATROL, {"path": patrol_path})
+        # ── 困难：回防己方HQ ──────────────────────────────────────
+        if self._diff == "困难":
+            own_hq = self._map.get_faction_hq_location(unit.faction)
+            if own_hq:
+                for e in enemies:
+                    if not e.is_alive:
+                        continue
+                    if max(abs(e.position.x - own_hq.x), abs(e.position.y - own_hq.y)) <= 4:
+                        self._issue(unit, CommandType.MOVE,
+                                    {"direction": self._dir_to(unit, own_hq), "distance": 4}, t)
+                        return
 
-    # ── 内部：方向计算 ──────────────────────────────────────────────────
+        # ── 4. 敌方 HQ ───────────────────────────────────────────
+        enemy_hq = self._map.get_faction_hq_location(
+            Faction.FRIENDLY if unit.faction == Faction.ENEMY else Faction.ENEMY)
+        if enemy_hq is None:
+            return
 
-    def _direction_toward_own_hq(self, unit: IUnit) -> str | None:
-        """计算单位朝向己方 HQ 的撤退方向。
+        dist_to_hq = max(abs(unit.position.x - enemy_hq.x),
+                         abs(unit.position.y - enemy_hq.y))
 
-        Args:
-            unit: 当前单位
+        # 靠近 HQ → 直接压上
+        if dist_to_hq <= 3:
+            self._issue(unit, CommandType.MOVE,
+                        {"direction": self._dir_to(unit, enemy_hq), "distance": 1}, t)
+            return
 
-        Returns:
-            方向字符串（"N"/"S"/"E"/"W"/...），若无法确定返回 None
-        """
-        hq_coord = self._map.get_faction_hq_location(unit.faction)
-        if hq_coord is None:
-            return None
+        # ── 5. 兵种差异化（卡住时随机方向） ────────────────────────
+        ut = unit.unit_type
+        if stuck:
+            direction = self._rng.choice(_DIRS)
+            self._issue(unit, CommandType.MOVE,
+                        {"direction": direction, "distance": self._rng.randint(2, 4)}, t)
+            return
 
-        dx = hq_coord.x - unit.position.x
-        dy = hq_coord.y - unit.position.y
+        if ut == UnitType.CAVALRY:
+            if self._diff in ("中等", "困难"):
+                flank_dir = self._flank_dir(unit, enemy_hq)
+                self._issue(unit, CommandType.MOVE,
+                            {"direction": flank_dir, "distance": self._rng.randint(3, 5)}, t)
+            else:
+                self._issue(unit, CommandType.MOVE,
+                            {"direction": self._dir_to(unit, enemy_hq),
+                             "distance": self._rng.randint(3, 5)}, t)
 
-        # 转换为八方向中最接近的
-        dir_x = ""
-        dir_y = ""
+        elif ut == UnitType.ARTILLERY:
+            if self._diff == "困难" and dist_to_hq <= unit.attack_range + 1:
+                return  # 保持射程，不前进
+            self._issue(unit, CommandType.MOVE,
+                        {"direction": self._dir_to(unit, enemy_hq), "distance": 2}, t)
 
-        if dx > 0:
-            dir_x = "E"
-        elif dx < 0:
-            dir_x = "W"
+        elif ut == UnitType.SCOUT:
+            # 偏向敌方 HQ，但加随机偏移
+            base_dir = self._dir_to(unit, enemy_hq)
+            idx = _DIRS.index(base_dir) if base_dir in _DIRS else 0
+            offset = self._rng.choice([-1, 0, 1])
+            patrol_dir = _DIRS[(idx + offset) % 8]
+            self._issue(unit, CommandType.MOVE,
+                        {"direction": patrol_dir, "distance": self._rng.randint(3, 5)}, t)
 
-        if dy > 0:
-            dir_y = "S"
-        elif dy < 0:
-            dir_y = "N"
+        else:  # Infantry
+            direction = self._dir_to(unit, enemy_hq)
+            dist = self._rng.randint(2, 4) if advantage else self._rng.randint(3, 5)
+            self._issue(unit, CommandType.MOVE,
+                        {"direction": direction, "distance": dist}, t)
 
-        if dir_x and dir_y:
-            return dir_y + dir_x  # "NE", "NW", "SE", "SW"
-        if dir_x:
-            return dir_x
-        if dir_y:
-            return dir_y
-        return "N"  # 默认向北
+    def _flank_dir(self, unit: IUnit, target: Coordinate) -> str:
+        base = self._dir_to(unit, target)
+        idx = _DIRS.index(base) if base in _DIRS else 0
+        offset = 1 if self._rng.random() < 0.5 else -1  # 45° 偏转
+        return _DIRS[(idx + offset) % 8]
 
-    def _generate_patrol_path(self, unit: IUnit) -> list[list[int]]:
-        """为巡逻指令生成随机路径（2~4 个点）。
+    def _dir_to(self, unit: IUnit, target: Coordinate) -> str:
+        dx = target.x - unit.position.x
+        dy = target.y - unit.position.y
+        if dx == 0 and dy == 0:
+            return "N"
+        ax, ay = abs(dx), abs(dy)
+        if ax > 2 * ay:
+            return "E" if dx > 0 else "W"
+        if ay > 2 * ax:
+            return "S" if dy > 0 else "N"
+        parts = []
+        if dy < 0: parts.append("N")
+        if dy > 0: parts.append("S")
+        if dx < 0: parts.append("W")
+        if dx > 0: parts.append("E")
+        return "".join(parts) if parts else "N"
 
-        Args:
-            unit: 当前单位
-
-        Returns:
-            路径坐标列表 [[x1, y1], [x2, y2], ...]
-        """
-        path: list[list[int]] = [[unit.position.x, unit.position.y]]
-
-        num_extra = self._rng.randint(1, 3)
-        cx, cy = unit.position.x, unit.position.y
-
-        for _ in range(num_extra):
-            dx = self._rng.randint(-3, 3)
-            dy = self._rng.randint(-3, 3)
-            nx = max(0, min(self._map.width - 1, cx + dx))
-            ny = max(0, min(self._map.height - 1, cy + dy))
-            # 确保是可通行格
-            coord = Coordinate(nx, ny)
-            if self._map.is_passable(coord):
-                path.append([nx, ny])
-                cx, cy = nx, ny
-
-        return path
+    def _issue(self, unit, cmd_type, params, current_time):
+        self._commander.issue_command(unit.unit_id, cmd_type, params, current_time)

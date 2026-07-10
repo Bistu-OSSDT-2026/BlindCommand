@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>格子尺寸预览 — BlindCommand</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#1a1a1a; color:#ccc; font-family:monospace; padding:20px; }
+  h2 { margin:20px 0 10px; color:#ffd700; }
+  
+  .preview-row { display:flex; gap:30px; flex-wrap:wrap; margin-bottom:30px; }
+  
+  .tile-compare { display:flex; gap:20px; align-items:flex-start; }
+  .tile-box { text-align:center; }
+  .tile-group { display:flex; flex-wrap:wrap; }
+  .tile { box-sizing:border-box; border:1px solid #555; background:#e8d5b0; }
+  
+  .layout-preview {
+    width:1280px; height:800px; background:#2a2a2a; position:relative;
+    border:2px solid #666; transform-origin:top left;
+  }
+  
+  .battle-log {
+    position:absolute; left:0; top:0; width:28%; height:720px;
+    background:#1a1a1a; border-right:2px solid #3a3a3a;
+    display:flex; align-items:center; justify-content:center;
+    font-size:14px; color:#888;
+  }
+  .command-panel {
+    position:absolute; left:0; bottom:0; width:100%; height:80px;
+    background:#2a2a2a; border-top:2px solid #3a3a3a;
+    display:flex; align-items:center; justify-content:center;
+    font-size:14px; color:#888;
+  }
+  .map-area {
+    position:absolute; left:28%; top:0; width:72%; height:720px;
+    display:flex; align-items:center; justify-content:center;
+    background:#1e1e1e;
+  }
+  .grid-container {
+    display:grid; gap:0;
+  }
+  
+  .info { font-size:16px; margin:10px 0; }
+  .info span { color:#ffd700; font-weight:bold; }
+  
+  .scale-control { margin:10px 0; }
+  button { padding:8px 16px; margin-right:10px; background:#444; color:#ccc; border:1px solid #666; cursor:pointer; }
+  button:hover { background:#555; }
+  button.active { background:#886622; border-color:#ffd700; }
+  
+  .note { color:#999; font-size:13px; margin-top:5px; }
+</style>
+</head>
+<body>
+
+<h1>🔍 格子尺寸预览</h1>
+
+<!-- ==================== 格子大小对比 ==================== -->
+<h2>单格对比：40px（现在） vs 28px（建议） vs 24px</h2>
+<div class="tile-compare">
+  <div class="tile-box">
+    <div style="width:40px;height:40px;background:#e8d5b0;border:1px solid #555;display:flex;align-items:center;justify-content:center;font-size:10px;color:#555;">40px</div>
+    <div class="note">当前 TILE_SIZE<br>800×600=300格</div>
+  </div>
+  <div class="tile-box">
+    <div style="width:28px;height:28px;background:#e8d5b0;border:1px solid #555;display:flex;align-items:center;justify-content:center;font-size:8px;color:#555;">28px</div>
+    <div class="note">建议 TILE_SIZE<br>784×616=616格</div>
+  </div>
+  <div class="tile-box">
+    <div style="width:24px;height:24px;background:#e8d5b0;border:1px solid #555;display:flex;align-items:center;justify-content:center;font-size:7px;color:#555;">24px</div>
+    <div class="note">备选 TILE_SIZE<br>816×648=1224格</div>
+  </div>
+  <div class="tile-box">
+    <div style="width:40px;height:40px;background:#e8d5b0;border:1px solid #555;display:flex;align-items:center;justify-content:center;">
+      <div style="width:28px;height:28px;background:#c9a86c;border:1px dashed #886622;"></div>
+    </div>
+    <div class="note">28px 缩进 40px 格子中<br>可见留白比例</div>
+  </div>
+</div>
+
+<!-- ==================== 2×3 小棋盘预览 ==================== -->
+<h2>2×3 小棋盘直观对比（实际像素）</h2>
+<div class="tile-compare">
+  <div class="tile-box">
+    <div class="tile-group" style="width:120px;">
+      <div class="tile" style="width:40px;height:40px;"></div><div class="tile" style="width:40px;height:40px;"></div><div class="tile" style="width:40px;height:40px;"></div>
+      <div class="tile" style="width:40px;height:40px;"></div><div class="tile" style="width:40px;height:40px;"></div><div class="tile" style="width:40px;height:40px;"></div>
+    </div>
+    <div class="note">40px → 6格占 120×80</div>
+  </div>
+  <div class="tile-box">
+    <div class="tile-group" style="width:84px;">
+      <div class="tile" style="width:28px;height:28px;"></div><div class="tile" style="width:28px;height:28px;"></div><div class="tile" style="width:28px;height:28px;"></div>
+      <div class="tile" style="width:28px;height:28px;"></div><div class="tile" style="width:28px;height:28px;"></div><div class="tile" style="width:28px;height:28px;"></div>
+    </div>
+    <div class="note">28px → 6格占 84×56<br>（节省 30%面积）</div>
+  </div>
+  <div class="tile-box">
+    <div class="tile-group" style="width:72px;">
+      <div class="tile" style="width:24px;height:24px;"></div><div class="tile" style="width:24px;height:24px;"></div><div class="tile" style="width:24px;height:24px;"></div>
+      <div class="tile" style="width:24px;height:24px;"></div><div class="tile" style="width:24px;height:24px;"></div><div class="tile" style="width:24px;height:24px;"></div>
+    </div>
+    <div class="note">24px → 6格占 72×48</div>
+  </div>
+</div>
+
+<!-- ==================== 完整布局预览 ==================== -->
+<h2>完整窗口预览 (1280×800)</h2>
+<div class="scale-control">
+  <button onclick="switchMap(28,22,28)" class="active" id="btn28">28×22 (28px) — 616格 推荐</button>
+  <button onclick="switchMap(20,15,40)" id="btn40">20×15 (40px) — 300格 当前</button>
+  <button onclick="switchMap(34,25,24)" id="btn24">34×25 (24px) — 850格</button>
+</div>
+
+<div class="layout-preview" id="layout" style="transform:scale(0.85);">
+  <div class="battle-log">📋 战报面板<br>(28%)</div>
+  <div class="map-area" id="mapArea">
+    <div class="grid-container" id="gridContainer"></div>
+  </div>
+  <div class="command-panel">⌨ 指令选择栏 (80px)</div>
+</div>
+
+<div class="info" id="stats">
+  地图: <span>28×22</span> | 格子数: <span>616</span> | TILE_SIZE: <span>28px</span> | 地图大小: <span>784×616</span>
+</div>
+
+<script>
+function buildGrid(cols, rows, size) {
+  const container = document.getElementById('gridContainer');
+  const area = document.getElementById('mapArea');
+  container.innerHTML = '';
+  container.style.gridTemplateColumns = `repeat(${cols}, ${size}px)`;
+  
+  const colors = [
+    '#e8d5b0','#e8d5b0','#e8d5b0','#c8c090','#c8c090',
+    '#d0c8a0','#e8d5b0','#b8b090','#e8d5b0','#e8d5b0',
+    '#e8d5b0','#c8c090','#d0c8a0','#e8d5b0','#b8b090',
+    '#e8d5b0','#e8d5b0','#c8c090','#e8d5b0','#e8d5b0',
+    '#d0c8a0','#b8b090','#e8d5b0','#e8d5b0','#c8c090',
+    '#e8d5b0','#e8d5b0','#e8d5b0','#d0c8a0','#b8b090'
+  ];
+  
+  for (let r=0; r<rows; r++) {
+    for (let c=0; c<cols; c++) {
+      const tile = document.createElement('div');
+      tile.style.width = size+'px';
+      tile.style.height = size+'px';
+      tile.style.border = '1px solid #999';
+      tile.style.background = colors[(r*cols+c) % colors.length];
+      // 加一些地形变化示意
+      if ((r*cols+c) % 7 === 3) tile.style.background = '#b8b090';  // 森林色
+      if ((r*cols+c) % 13 === 5) tile.style.background = '#c0b8a0'; // 山底色
+      if ((r*cols+c) % 17 === 8) tile.style.background = '#90a0c0'; // 河色
+      if (c===2 && r===rows-2) tile.style.background = '#d0b050';   // HQ
+      if (c===cols-3 && r===1) tile.style.background = '#d0b050';   // HQ
+      tile.style.fontSize = Math.max(6, size/5)+'px';
+      tile.style.display = 'flex';
+      tile.style.alignItems = 'center';
+      tile.style.justifyContent = 'center';
+      tile.style.color = '#8866';
+      // 每5格显示坐标参考
+      if (c%5===0 && r%5===0) tile.textContent = c+','+r;
+      container.appendChild(tile);
+    }
+  }
+}
+
+function switchMap(cols, rows, size) {
+  document.getElementById('btn28').classList.remove('active');
+  document.getElementById('btn40').classList.remove('active');
+  document.getElementById('btn24').classList.remove('active');
+  document.getElementById('btn'+(size===28?'28':size===40?'40':'24')).classList.add('active');
+  
+  buildGrid(cols, rows, size);
+  document.getElementById('stats').innerHTML = 
+    `地图: <span>${cols}×${rows}</span> | 格子数: <span>${cols*rows}</span> | TILE_SIZE: <span>${size}px</span> | 地图大小: <span>${cols*size}×${rows*size}px</span>`;
+}
+
+// 默认加载 28×22
+switchMap(28, 22, 28);
+</script>
+
+</body>
+</html>

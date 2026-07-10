@@ -21,8 +21,6 @@
 from __future__ import annotations
 
 from src.core.constants import (
-    COMBAT_CRITICAL_HP_RATIO,
-    COMBAT_HEALTHY_HP_RATIO,
     COMBAT_MIN_DAMAGE,
     UNIT_DISPLAY_NAMES,
     UNIT_STATS,

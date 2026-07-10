@@ -68,8 +68,8 @@ from src.core.event_bus import EventBus, event_bus
 from src.core.interfaces import (
     ICommand,
     ICommander,
+    IEngine,
     IFogOfWar,
-    IGameLoop,
     IGameState,
     IMap,
     IRangeQuery,
@@ -132,8 +132,8 @@ __all__ = [
     # Interfaces
     "ICommand",
     "ICommander",
+    "IEngine",
     "IFogOfWar",
-    "IGameLoop",
     "IGameState",
     "IMap",
     "IRangeQuery",

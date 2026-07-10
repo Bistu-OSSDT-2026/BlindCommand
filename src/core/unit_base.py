@@ -1,28 +1,25 @@
 """
-BlindCommand Unit 基类 — IUnit 接口的具体实现
-================================================
-本模块提供 `UnitBase` 类，作为所有兵种的父类（#3 的 Infantry / Cavalry / ... 继承它）。
+BlindCommand Unit 基类 — IUnit 接口的具体实现 (RTT)
+=====================================================
+本模块提供 `UnitBase` 类，支持连续移动（float 坐标 + dt 推进）。
 
 职责：
-- 持有单位全部属性（血量、攻防、坐标、阵营、兵种等）
-- take_damage（纯扣血原语，完整伤害公式由 #3 计算）
-- move_to（全或无移动，委托 Map 寻路）
-- attack_target（最小默认实现，克制/反击/先手由 #3 重写）
-- can_attack / get_state_report
+- 持有单位全部属性
+- take_damage（纯扣血原语）
+- RTT 连续移动：set_destination + update_movement(dt)
+- attack_target / can_attack / get_state_report
 
-约束：
-- 不直接 emit 事件（阵亡/受伤事件由 #3 battle_system 广播）
-- 不依赖 src/battle/ 或 src/ui/
-
-版本：v0.1.0（对齐 CORE_SPEC.md §3）
+版本：v0.2.0 — RTT
 """
 
 from __future__ import annotations
 
 import logging
+import math
 
 from src.core.constants import (
     COMBAT_MIN_DAMAGE,
+    SECONDS_PER_TILE_BASE,
     UNIT_DISPLAY_NAMES,
     Coordinate,
     Faction,
@@ -35,17 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 class UnitBase(IUnit):
-    """单位基类，实现 IUnit 接口的全部属性与操作方法。
-
-    #3 应继承本类并可能重写 attack_target、get_state_report 等
-    以实现兵种特化逻辑。
-
-    Attributes:
-        _game_map: 可选 Map 引用，仅 move_to / defense(bonus) 依赖；
-                   无 Map 时 move_to 直接更新坐标（测试模式）。
-    """
-
-    # ── __init__ ───────────────────────────────────────────────────────
+    """单位基类（RTT）。"""
 
     def __init__(
         self,
@@ -57,24 +44,8 @@ class UnitBase(IUnit):
         stats: UnitStats,
         game_map: IMap | None = None,
     ) -> None:
-        """初始化单位实例。
-
-        Args:
-            unit_id: 全局唯一标识，如 'friendly_infantry_01'
-            name: 人类可读名称，如 '第一步兵连'
-            faction: 所属阵营
-            unit_type: 兵种类型
-            position: 初始坐标（若传入 game_map 则校验越界）
-            stats: 兵种属性模板（通常从 UNIT_STATS[unit_type] 取）
-            game_map: 可选 Map 引用，启用 move_to 路径验证与地形防御加成
-
-        Raises:
-            ValueError: 若 game_map 非 None 且 position 越界
-        """
         if game_map is not None and not game_map.is_within_bounds(position):
-            raise ValueError(
-                f"单位 {unit_id} 初始坐标 {position} 越界"
-            )
+            raise ValueError(f"单位 {unit_id} 初始坐标 {position} 越界")
 
         self._unit_id = unit_id
         self._name = name
@@ -93,7 +64,16 @@ class UnitBase(IUnit):
         self._is_alive = True
 
         self._game_map = game_map
-        self._terrain_defense_bonus: int = 0  # 显式地形加成（#3 BattleSystem 设置）
+        self._terrain_defense_bonus: int = 0
+
+        # ── RTT 连续移动 ──────────────────────────────────────────
+        self._float_x: float = float(position.x)
+        self._float_y: float = float(position.y)
+        self._path: list[Coordinate] = []
+        self._path_index: int = 0
+        self._tile_progress: float = 0.0  # 当前格内进度 [0,1)
+        self._destination: Coordinate | None = None
+        self._moving: bool = False
 
     # ── 只读属性 ──────────────────────────────────────────────────────
 
@@ -118,6 +98,11 @@ class UnitBase(IUnit):
         return self._position
 
     @property
+    def float_position(self) -> tuple[float, float]:
+        """浮点坐标（RTT 连续移动用）。"""
+        return (self._float_x, self._float_y)
+
+    @property
     def max_hp(self) -> int:
         return self._max_hp
 
@@ -127,18 +112,10 @@ class UnitBase(IUnit):
 
     @property
     def attack(self) -> int:
-        """基础攻击力（不含克制倍率，克制归 #3）。"""
         return self._base_attack
 
     @property
     def defense(self) -> int:
-        """最终防御力 = 基础防御 + 地形防御加成。
-
-        地形加成来源（按优先级）：
-        1. 若 #3 通过 terrain_defense_bonus setter 显式设置，使用该值
-        2. 否则，若有 Map 引用，从地图查询当前格子的防御加成
-        3. 否则（测试模式），返回裸基础防御
-        """
         if self._terrain_defense_bonus != 0 or self._game_map is None:
             return self._base_defense + self._terrain_defense_bonus
         bonus = self._game_map.get_defense_bonus(self._position)
@@ -147,6 +124,13 @@ class UnitBase(IUnit):
     @property
     def speed(self) -> int:
         return self._speed
+
+    @property
+    def seconds_per_tile(self) -> float:
+        """每格移动耗时（秒）。公式: 6 / speed。"""
+        if self._speed == 0:
+            return float('inf')
+        return SECONDS_PER_TILE_BASE / self._speed
 
     @property
     def attack_range(self) -> int:
@@ -165,123 +149,136 @@ class UnitBase(IUnit):
         return self._is_hq
 
     @property
+    def is_moving(self) -> bool:
+        return self._moving
+
+    @property
     def hp_ratio(self) -> float:
-        """当前血量比例 (0.0 ~ 1.0)。"""
         return self._current_hp / self._max_hp if self._max_hp > 0 else 0.0
 
     @property
     def terrain_defense_bonus(self) -> int:
-        """显式地形防御加成（由 #3 BattleSystem 在结算前设置）。"""
         return self._terrain_defense_bonus
 
     @terrain_defense_bonus.setter
     def terrain_defense_bonus(self, value: int) -> None:
-        """设置地形防御加成。
-
-        #3 BattleSystem 在 resolve_battle 前调用此 setter，
-        将 IMap.get_defense_bonus() 的结果缓存到单位上。
-        """
         self._terrain_defense_bonus = value
+
+    # ── RTT 移动 ──────────────────────────────────────────────────────
+
+    def set_destination(self, target: Coordinate) -> bool:
+        """设置移动目标。计算路径，开始连续移动。
+
+        Returns:
+            True 如果目标可达
+        """
+        if not self._is_alive or self._is_hq:
+            return False
+        if self._game_map is None:
+            return False
+        if not self._game_map.is_within_bounds(target):
+            return False
+        if target == self._position:
+            self._moving = False
+            self._path = []
+            return True
+
+        path = self._game_map.find_path(self._position, target, 999)
+        if not path:
+            return False
+
+        self._path = path
+        self._path_index = 1  # 跳过起点
+        self._tile_progress = 0.0
+        self._destination = target
+        self._moving = True
+        return True
+
+    def update_movement(self, dt: float) -> None:
+        """每帧推进连续移动。
+
+        Args:
+            dt: 本帧时间（秒）
+        """
+        if not self._moving or not self._path or self._path_index >= len(self._path):
+            self._moving = False
+            return
+
+        advance = dt / self.seconds_per_tile
+        self._tile_progress += advance
+
+        while self._tile_progress >= 1.0 and self._path_index < len(self._path):
+            self._tile_progress -= 1.0
+            next_coord = self._path[self._path_index]
+            if self._game_map is not None:
+                if not self._game_map.move_unit(self, self._position, next_coord):
+                    # 被阻塞，停止
+                    self._moving = False
+                    self._path = []
+                    return
+            self._position = next_coord
+            self._float_x = float(next_coord.x)
+            self._float_y = float(next_coord.y)
+            self._path_index += 1
+
+        if self._path_index >= len(self._path):
+            self._moving = False
+            self._path = []
+            self._tile_progress = 0.0
+            return
+
+        # 更新浮点坐标
+        if self._path_index < len(self._path):
+            target_coord = self._path[self._path_index]
+            frac = self._tile_progress
+            self._float_x = self._position.x + (target_coord.x - self._position.x) * frac
+            self._float_y = self._position.y + (target_coord.y - self._position.y) * frac
 
     # ── 操作方法 ──────────────────────────────────────────────────────
 
     def take_damage(self, amount: int, source: IUnit) -> int:
-        """受到伤害（纯扣血原语，对齐 CORE_SPEC.md C-1）。
-
-        传入的 amount 应为 #3 battle_system 用完整伤害公式计算后的最终值
-        （已扣除防御、已乘克制倍率与地形修正）。本方法仅负责扣减 current_hp、
-        阵亡判定，并返回实际扣血量。
-
-        Args:
-            amount: 最终伤害值（#3 计算后传入）
-            source: 伤害来源单位
-
-        Returns:
-            实际扣血量 = min(amount, 扣血前 current_hp)
-
-        Raises:
-            ValueError: 若 amount < 0
-        """
         if not self._is_alive:
             return 0
         if amount < 0:
-            raise ValueError(f"伤害值不能为负，收到 {amount}（来源: {source.unit_id}）")
-
+            raise ValueError(f"伤害值不能为负，收到 {amount}")
         applied = min(amount, self._current_hp)
         self._current_hp -= applied
-
         if self._current_hp == 0:
             self._is_alive = False
-            logger.debug("单位 %s (%s) 阵亡", self._name, self._unit_id)
-
+            self._moving = False
+            self._path = []
         return applied
 
     def move_to(self, target: Coordinate) -> bool:
-        """移动到 target（全或无语义，对齐 CORE_SPEC.md C-7）。
-
-        仅当目标在 speed 步数内可达时才移动并返回 True；
-        若不可达或 max_steps 不足，不移动并返回 False。
-
-        Args:
-            target: 目标坐标
-
-        Returns:
-            True 当且仅当已真正抵达 target
-        """
+        """teleport 移动（兼容旧代码，测试用）。"""
         if not self._is_alive:
             return False
-
-        # 无 Map 模式（测试/自测）：直接跳跃
         if self._game_map is None:
             self._position = target
+            self._float_x = float(target.x)
+            self._float_y = float(target.y)
             return True
-
         if not self._game_map.is_within_bounds(target):
             return False
         if self._position == target:
             return True
-
         path = self._game_map.find_path(self._position, target, self._speed)
         if not path or path[-1] != target:
-            # 不可达 或 步数不够（全或无，不部分移动）
             return False
-
         if self._game_map.move_unit(self, self._position, target):
             self._position = target
+            self._float_x = float(target.x)
+            self._float_y = float(target.y)
             return True
         return False
 
     def attack_target(self, target: IUnit) -> int:
-        """默认近战攻击（最小实现，对齐 CORE_SPEC.md C-2）。
-
-        伤害 = max(COMBAT_MIN_DAMAGE, self.attack - target.defense)。
-        不含兵种克制、反击、先手——这些由 #3 的 battle_system /
-        兵种子类重写实现。
-
-        Args:
-            target: 被攻击的单位
-
-        Returns:
-            对目标实际造成的伤害；若无法攻击返回 0
-        """
         if not self.can_attack(target):
             return 0
-
         raw = max(COMBAT_MIN_DAMAGE, self.attack - target.defense)
         return target.take_damage(raw, self)
 
     def can_attack(self, target: IUnit) -> bool:
-        """判断是否可以攻击目标。
-
-        条件：自身存活、目标存活、不同阵营、攻击范围 > 0、
-              切比雪夫距离 ≤ attack_range。
-
-        Args:
-            target: 潜在目标
-
-        Returns:
-            True 如果可以攻击
-        """
         if not self._is_alive or not target.is_alive:
             return False
         if self._attack_range == 0:
@@ -292,11 +289,6 @@ class UnitBase(IUnit):
         return dist <= self._attack_range
 
     def get_state_report(self) -> str:
-        """生成用于战报的人类可读状态文本。
-
-        Returns:
-            格式：'{名称}（{兵种中文}） [{存活/阵亡}] HP {cur}/{max} ({pct}%)'
-        """
         status = "存活" if self._is_alive else "阵亡"
         hp_pct = int(self._current_hp / self._max_hp * 100) if self._max_hp else 0
         return (

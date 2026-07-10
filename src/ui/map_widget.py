@@ -14,7 +14,7 @@ Sprint 2 新增：
 
 依赖：
     src/core/constants.py  — TerrainType, TILE_SIZE, COLOR_FRIENDLY/ENEMY, ...
-    src/core/interfaces.py — IMap, IFogOfWar, IGameLoop, IUnit
+    src/core/interfaces.py — IMap, IUnit, IEngine
     src/ui/marker.py       — MarkerSystem（可选注入）
     src/ui/fog_renderer.py — FogRenderer（可选注入）
 
@@ -39,17 +39,19 @@ from src.core.constants import (
     TILE_SIZE,
     Coordinate,
     Faction,
+    GameEventType,
     TerrainType,
 )
+from src.core.event_bus import event_bus
 
 if TYPE_CHECKING:
-    from src.core.interfaces import IFogOfWar, IGameLoop, IMap, IUnit
-    from src.ui.fog_renderer import FogRenderer
+    from src.core.interfaces import IEngine, IMap, IUnit
     from src.ui.marker import MarkerSystem
 
 logger = logging.getLogger(__name__)
 
-# ── 地形色块映射（Sprint 1 占位，无图片素材时使用） ──────────────────────
+# ── 地形符号缩放系数（>1 = 比格子大） ──────────────────────────────
+TERRAIN_SYMBOL_SCALE = 1.5  # 符号 = TILE_SIZE × 1.5
 
 TERRAIN_COLORS: dict[TerrainType, tuple[int, int, int]] = {
     TerrainType.PLAIN:    (144, 238, 144),  # 浅绿
@@ -134,13 +136,18 @@ class MapWidget:
         self._map_offset: tuple[int, int] = (0, 0)  # 地图在画布中的偏移（公开给 marker/fog）
 
         # ── 图片缓存 ──────────────────────────────────────────────
-        self._tile_image_cache: dict[TerrainType, Optional[pygame.Surface]] = {}
+        self._tile_image_cache: dict = {}  # key: TerrainType or "_base_"
         self._unit_image_cache: dict[str, Optional[pygame.Surface]] = {}
         self._images_loaded: bool = False
+        self._friendly_hq: Optional[Coordinate] = None
+        self._dev_units: list = []  # 开发者模式单位列表  # 友军 HQ 坐标
 
         # ── 注入的子系统（Sprint 2） ──────────────────────────────
         self.marker_system: Optional[MarkerSystem] = None
-        self.fog_renderer: Optional[FogRenderer] = None
+
+        # ── 汇报圈 ──────────────────────────────────────────────
+        self._report_circles: list[dict] = []
+        event_bus.subscribe(GameEventType.POSITION_REPORT, self._on_report)
 
         # ── 预加载图片 ────────────────────────────────────────────
         self._load_tile_images()
@@ -178,18 +185,35 @@ class MapWidget:
         self._map_data = map_data
         logger.info("MapWidget 已绑定 IMap 数据源")
 
-    def set_fog(self, fog: IFogOfWar) -> None:
-        """绑定迷雾查询接口（Sprint 2 对接 #2 的 IFogOfWar 实现）。
-
-        Args:
-            fog: #2 提供的 IFogOfWar 接口实例
-        """
-        self._fog = fog
-        if self.fog_renderer is not None:
-            self.fog_renderer.set_fog(fog)
-        logger.info("MapWidget 已绑定 IFogOfWar 数据源")
+    def set_fog(self, fog) -> None:
+        pass  # RTT 无迷雾
 
     # ── 公开方法：地图加载 ──────────────────────────────────────────
+
+    def set_dev_units(self, units: list) -> None:
+        self._dev_units = units
+
+    def set_friendly_hq(self, coord: Coordinate) -> None:
+        self._friendly_hq = coord
+
+    def _render_dev_units(self) -> None:
+        """开发者模式：用兵种图标渲染所有单位。"""
+        if not self._dev_units or self._map_surface is None:
+            return
+        for u in self._dev_units:
+            if not u.is_alive:
+                continue
+            cache_key = f"{u.unit_type.value}_{u.faction.value}"
+            icon = self._unit_image_cache.get(cache_key)
+            x = u.position.x * self._tile_size
+            y = u.position.y * self._tile_size
+            if icon is not None:
+                self._map_surface.blit(icon, (x, y))
+            else:
+                color = (100, 150, 255, 200) if u.faction.value == "FRIENDLY" else (255, 100, 100, 200)
+                s = pygame.Surface((self._tile_size, self._tile_size), pygame.SRCALPHA)
+                pygame.draw.circle(s, color, (self._tile_size // 2, self._tile_size // 2), self._tile_size // 2 - 2)
+                self._map_surface.blit(s, (x, y))
 
     def load_map_from_json(self, filepath: str = DEFAULT_MAP_FILE) -> bool:
         """从 JSON 文件加载地图数据。
@@ -239,10 +263,7 @@ class MapWidget:
         offset_y = (self.rect.height - self.pixel_height) // 2
         self._map_offset = (max(0, offset_x), max(0, offset_y))
 
-        # 通知 FogRenderer 更新地图尺寸
-        if self.fog_renderer is not None:
-            self.fog_renderer.set_map_size(self._map_width, self._map_height)
-
+        # 通知 FogRenderer 更新地图尺寸（已弃用，RTT 无迷雾）
         logger.info(
             "地图加载成功: %s, 尺寸 %d×%d, 单位 %d",
             path.name,
@@ -256,47 +277,62 @@ class MapWidget:
 
     def render(
         self,
-        game_loop: IGameLoop | None = None,
-        player_faction: Faction = Faction.FRIENDLY,
+        markers: list | None = None,
+        report_circles: list | None = None,
     ) -> None:
-        """完整渲染一帧：地形层 + 网格线 + 单位层 + 标记层 + 迷雾层。
-
-        渲染顺序（由底到顶）：
-            1. 地形瓦片
-            2. 网格线
-            3. 单位精灵（可见性过滤）
-            4. 玩家标记（由 MarkerSystem 提供）
-            5. 迷雾遮罩 + 大致位置高亮（由 FogRenderer 提供）
-
-        Args:
-            game_loop: #2 提供的 IGameLoop 实例（获取单位列表）
-            player_faction: 玩家阵营（用于可见性判定）
-        """
+        """RTT 渲染：层0地形 → 层1标记 → 层2汇报圈。"""
         if self._map_surface is None:
             return
-
-        # ── 层 0: 地形 ────────────────────────────────────────────
         self._render_terrain_layer()
+        # 标记
+        if self.marker_system is not None:
+            self.marker_system.draw_markers(self._map_surface, self)
+        # 汇报圈
+        self._render_report_circles(self._report_circles)
+        # 开发模式单位
+        self._render_dev_units()
 
-        # ── 层 1: 网格线 ──────────────────────────────────────────
-        self._render_grid_lines()
-
-        # ── 层 2: 单位 ────────────────────────────────────────────
-        if game_loop is not None:
-            self._render_unit_layer_from_gameloop(game_loop, player_faction)
-        else:
-            # Sprint 1 兼容模式：无可见性过滤
-            self._render_unit_layer_legacy()
-
-        # ── 层 3: 标记（Sprint 2） ─────────────────────────────────
+    def _render_markers(self, markers: list) -> None:
+        """渲染玩家标记（委托给外部系统或直接 blit）。"""
         if self.marker_system is not None:
             self.marker_system.draw_markers(self._map_surface, self)
 
-        # ── 层 4: 迷雾 + 高亮（Sprint 2） ────────────────────────────
-        # 注意：先绘制迷雾遮罩，再绘制高亮圈，确保高亮在迷雾之上可见
-        if self.fog_renderer is not None:
-            self.fog_renderer.render_fog(self._map_surface)
-            self.fog_renderer.render_highlights(self._map_surface)
+    def _render_report_circles(self, circles: list) -> None:
+        """渲染汇报圈。"""
+        from src.core.constants import REPORT_CIRCLE_ALPHA, REPORT_CIRCLE_RADIUS
+        for c in circles:
+            coord = c.get('coord')
+            alpha = c.get('alpha', REPORT_CIRCLE_ALPHA)
+            r = c.get('radius', REPORT_CIRCLE_RADIUS) * self._tile_size
+            if coord is None:
+                continue
+            cx = coord.x * self._tile_size + self._tile_size // 2
+            cy = coord.y * self._tile_size + self._tile_size // 2
+            # 限制渲染范围
+            if cx < 0 or cy < 0 or cx > self._map_surface.get_width() or cy > self._map_surface.get_height():
+                continue
+            s = pygame.Surface((r * 2, r * 2), pygame.SRCALPHA)
+            pygame.draw.ellipse(s, (90, 85, 75, min(255, alpha)), s.get_rect(), 3)
+            self._map_surface.blit(s, (cx - r, cy - r))
+
+    def _on_report(self, payload) -> None:
+        """POSITION_REPORT 事件：添加汇报圈。"""
+        from src.core.constants import REPORT_CIRCLE_ALPHA, REPORT_CIRCLE_RADIUS, REPORT_CIRCLE_DURATION, Coordinate
+        x = getattr(payload, 'reported_x', 0)
+        y = getattr(payload, 'reported_y', 0)
+        self._report_circles.append({
+            'coord': Coordinate(x, y),
+            'alpha': REPORT_CIRCLE_ALPHA,
+            'radius': REPORT_CIRCLE_RADIUS,
+            'duration': REPORT_CIRCLE_DURATION,
+        })
+
+    def update_report_circles(self, dt: float) -> None:
+        """每帧更新汇报圈（递减计时，移除过期）。"""
+        for c in self._report_circles:
+            c['duration'] -= dt
+            c['alpha'] = max(0, int(80 * (c['duration'] / 5.0)))
+        self._report_circles = [c for c in self._report_circles if c['duration'] > 0]
 
     def draw(self, screen: pygame.Surface) -> None:
         """将渲染结果 blit 到主屏幕。
@@ -351,22 +387,55 @@ class MapWidget:
 
     # ── 私有方法：图片加载 ──────────────────────────────────────────
 
+    @staticmethod
+    def _load_svg(path: str) -> pygame.Surface:
+        import cairosvg, io
+        out = cairosvg.svg2png(url=path)
+        return pygame.image.load(io.BytesIO(out))
+
     def _load_tile_images(self) -> None:
-        """预加载地形图片到缓存。素材缺失时缓存 None（运行时降级纯色）。"""
+        """预加载地形图片 + 兵种图标。"""
         assets_path = Path(ASSETS_DIR) / "terrain"
+        units_path = Path("src/ui/assets/units")
+
+        # 兵种图标（开发者模式用，蓝=友军，红=敌军）
+        for key in ["Infantry", "Cavalry", "Artillery", "Scout", "HQ"]:
+            for color, cache_key in [("blue", f"{key}_FRIENDLY"), ("red", f"{key}_ENEMY")]:
+                for ext in [".png", ".svg"]:
+                    p = units_path / f"{key}_{color}{ext}"
+                    if p.exists():
+                        try:
+                            img = pygame.image.load(str(p)) if ext == ".png" else self._load_svg(str(p))
+                            img = pygame.transform.smoothscale(img, (self._tile_size, self._tile_size))
+                            self._unit_image_cache[cache_key] = img
+                        except Exception:
+                            pass
+                        break
+
+        # 基底纹理
+        base_path = assets_path / "MapBase.png"
+        if base_path.exists():
+            try:
+                self._tile_image_cache["_base_"] = pygame.image.load(str(base_path))
+            except pygame.error as e:
+                logger.warning("基底加载失败: %s", e)
+
+        # 地形符号
         for terrain_type, filename in TERRAIN_IMAGE_FILES.items():
+            if not filename:
+                self._tile_image_cache[terrain_type] = None
+                continue
             filepath = assets_path / filename
             if filepath.exists():
                 try:
                     img = pygame.image.load(str(filepath))
-                    # 缩放到 TILE_SIZE
-                    img = pygame.transform.scale(img, (self._tile_size, self._tile_size))
+                    symbol_size = int(self._tile_size * TERRAIN_SYMBOL_SCALE)
+                    img = pygame.transform.smoothscale(img, (symbol_size, symbol_size))
                     self._tile_image_cache[terrain_type] = img
                 except pygame.error as e:
                     logger.warning("地形图片加载失败: %s — %s", filepath, e)
                     self._tile_image_cache[terrain_type] = None
             else:
-                logger.debug("地形图片不存在，将使用纯色方块: %s", filepath)
                 self._tile_image_cache[terrain_type] = None
 
         self._images_loaded = True
@@ -374,32 +443,45 @@ class MapWidget:
     # ── 私有方法：渲染层 ─────────────────────────────────────────────
 
     def _render_terrain_layer(self) -> None:
-        """渲染地形层（优先图片，降级纯色方块）。"""
+        """RTT 渲染：基底纹理平铺 + 逐格 stamp 地形符号。平原格不贴符号。"""
         if self._map_surface is None:
             return
 
+        # 层 0：基底纹理（一张大图铺满整个地图）
+        base = self._tile_image_cache.get("_base_")
+        if base is not None:
+            pw, ph = self._map_surface.get_size()
+            scaled = pygame.transform.smoothscale(base, (pw, ph))
+            self._map_surface.blit(scaled, (0, 0))
+        else:
+            self._map_surface.fill((232, 213, 176))
+
+        # 层 1：地形符号
+        from src.core.constants import TerrainType
         for row_idx, row_data in enumerate(self._terrain_data):
             for col_idx, terrain_code in enumerate(row_data):
                 try:
                     terrain = TerrainType(terrain_code)
                 except ValueError:
                     terrain = TerrainType.PLAIN
-
-                rect = pygame.Rect(
-                    col_idx * self._tile_size,
-                    row_idx * self._tile_size,
-                    self._tile_size,
-                    self._tile_size,
-                )
-
-                # 优先使用图片
+                if terrain == TerrainType.PLAIN:
+                    continue
+                # HQ 只显示友军
+                if terrain == TerrainType.HQ_CELL:
+                    if self._friendly_hq is None or (col_idx != self._friendly_hq.x or row_idx != self._friendly_hq.y):
+                        continue
                 tile_img = self._tile_image_cache.get(terrain)
                 if tile_img is not None:
-                    self._map_surface.blit(tile_img, rect.topleft)
-                else:
-                    # 降级纯色方块
-                    color = TERRAIN_COLORS.get(terrain, (128, 128, 128))
-                    pygame.draw.rect(self._map_surface, color, rect)
+                    sym_w = tile_img.get_width()
+                    sym_h = tile_img.get_height()
+                    offset_x = (self._tile_size - sym_w) // 2
+                    offset_y = (self._tile_size - sym_h) // 2
+                    rect = pygame.Rect(
+                        col_idx * self._tile_size + offset_x,
+                        row_idx * self._tile_size + offset_y,
+                        sym_w, sym_h,
+                    )
+                    self._map_surface.blit(tile_img, rect)
 
     def _render_grid_lines(self) -> None:
         """渲染网格线。"""
@@ -429,14 +511,10 @@ class MapWidget:
             )
 
     def _render_unit_layer_from_gameloop(
-        self, game_loop: IGameLoop, player_faction: Faction
+        self, game_loop, player_faction: Faction
     ) -> None:
-        """Sprint 2：从 IGameLoop 获取单位并做可见性过滤。
-
-        Args:
-            game_loop: #2 提供的 IGameLoop 实例
-            player_faction: 玩家阵营
-        """
+        """[已弃用] RTT 下单位不渲染。保留用于兼容。"""
+        pass
         if self._map_surface is None:
             return
 
