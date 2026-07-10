@@ -298,24 +298,7 @@ class GameMap(IMap):
         self, start: Coordinate, end: Coordinate, max_steps: int,
         faction: Optional[Faction] = None,
     ) -> list[Coordinate]:
-        """A* 寻路：在 max_steps 步数预算内，找最小移动消耗路径。
-
-        - 每跨一格消耗 1 步（max_steps 限制跳数）
-        - 步内选择移动消耗（move_cost）最小的路径
-        - 切比雪夫距离 × 1 作启发式（admissible）
-        - 起点或终点不可通行 → 返回空列表
-        - 目标超出 max_steps → 返回空列表（全或无语义）
-        - 若提供 faction，则跳过被敌军占据的格（HQ 可双占除外）
-
-        Args:
-            start: 起点
-            end: 终点
-            max_steps: 最大跳数（等于单位 speed）
-            faction: 可选，移动单位所属阵营（用于过滤敌军占据格）
-
-        Returns:
-            路径坐标列表 [start, ..., end]；不可达时返回 []
-        """
+        """A* 寻路。"""
         if not self.is_within_bounds(start) or not self.is_within_bounds(end):
             return []
         if not self.is_passable(start) or not self.is_passable(end):
@@ -325,8 +308,22 @@ class GameMap(IMap):
         if max_steps < 1:
             return []
 
+        # 计算方向向量（用于方向偏差）
+        dx_end = end.x - start.x
+        dy_end = end.y - start.y
+        dist_end = max(abs(dx_end), abs(dy_end))
+        if dist_end > 0:
+            dx_end, dy_end = dx_end / dist_end, dy_end / dist_end
+
         def h(c: Coordinate) -> int:
-            return c.chebyshev_distance(end)
+            base = c.chebyshev_distance(end)
+            # 方向偏差：偏离目标方向越多，代价越大
+            dx = end.x - c.x
+            dy = end.y - c.y
+            if abs(dx) + abs(dy) > 0:
+                alignment = (dx * dx_end + dy * dy_end) / max(abs(dx) + abs(dy), 1)
+                base -= int(alignment * 2)  # 对齐方向 → 降低代价
+            return max(0, base)
 
         counter = 0
         open_heap: list[tuple[int, int, Coordinate]] = []

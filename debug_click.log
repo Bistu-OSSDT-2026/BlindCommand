@@ -1,0 +1,126 @@
+click at (720, 476), panel=False
+click at (740, 537), panel=True
+  handle_click: pos=(740, 537), n_items=5, rects=[<rect(724, 480, 72, 24)>, <rect(724, 504, 72, 24)>, <rect(724, 528, 72, 24)>, <rect(724, 552, 72, 24)>, <rect(724, 576, 72, 24)>]
+  HIT item 2: µÚÒ»Æï±øÁ¬
+  clicked=µÚÒ»Æï±øÁ¬, engine=True
+click at (118, 652), panel=False
+click at (507, 473), panel=False
+click at (533, 588), panel=True
+  handle_click: pos=(533, 588), n_items=5, rects=[<rect(511, 477, 72, 24)>, <rect(511, 501, 72, 24)>, <rect(511, 525, 72, 24)>, <rect(511, 549, 72, 24)>, <rect(511, 573, 72, 24)>]
+  HIT item 4: Õì²ìÅÅ
+  clicked=Õì²ìÅÅ, engine=True
+click at (122, 654), panel=False
+click at (118, 680), panel=False
+click at (553, 522), panel=False
+click at (575, 561), panel=True
+  handle_click: pos=(575, 561), n_items=5, rects=[<rect(557, 526, 72, 24)>, <rect(557, 550, 72, 24)>, <rect(557, 574, 72, 24)>, <rect(557, 598, 72, 24)>, <rect(557, 622, 72, 24)>]
+  HIT item 1: µÚ¶ş²½±øÁ¬
+  clicked=µÚ¶ş²½±øÁ¬, engine=True
+click at (911, 455), panel=False
+click at (935, 546), panel=True
+  handle_click: pos=(935, 546), n_items=5, rects=[<rect(915, 459, 72, 24)>, <rect(915, 483, 72, 24)>, <rect(915, 507, 72, 24)>, <rect(915, 531, 72, 24)>, <rect(915, 555, 72, 24)>]
+  HIT item 3: µÚÒ»ÅÚ±øÁ¬
+  clicked=µÚÒ»ÅÚ±øÁ¬, engine=True
+click at (698, 461), panel=False
+click at (722, 573), panel=True
+  handle_click: pos=(722, 573), n_items=5, rects=[<rect(702, 465, 72, 24)>, <rect(702, 489, 72, 24)>, <rect(702, 513, 72, 24)>, <rect(702, 537, 72, 24)>, <rect(702, 561, 72, 24)>]
+  HIT item 4: Õì²ìÅÅ
+  clicked=Õì²ìÅÅ, engine=True
+click at (1034, 392), panel=False
+click at (1056, 508), panel=True
+  handle_click: pos=(1056, 508), n_items=5, rects=[<rect(1038, 396, 72, 24)>, <rect(1038, 420, 72, 24)>, <rect(1038, 444, 72, 24)>, <rect(1038, 468, 72, 24)>, <rect(1038, 492, 72, 24)>]
+  HIT item 4: Õì²ìÅÅ
+  clicked=Õì²ìÅÅ, engine=True
+click at (555, 190), panel=False
+click at (575, 255), panel=True
+  handle_click: pos=(575, 255), n_items=5, rects=[<rect(559, 194, 72, 24)>, <rect(559, 218, 72, 24)>, <rect(559, 242, 72, 24)>, <rect(559, 266, 72, 24)>, <rect(559, 290, 72, 24)>]
+  HIT item 2: µÚÒ»Æï±øÁ¬
+  clicked=µÚÒ»Æï±øÁ¬, engine=True
+click at (806, 198), panel=False
+click at (828, 209), panel=True
+  handle_click: pos=(828, 209), n_items=5, rects=[<rect(810, 202, 72, 24)>, <rect(810, 226, 72, 24)>, <rect(810, 250, 72, 24)>, <rect(810, 274, 72, 24)>, <rect(810, 298, 72, 24)>]
+  HIT item 0: µÚÒ»²½±øÁ¬
+  clicked=µÚÒ»²½±øÁ¬, engine=True
+click at (620, 453), panel=False
+click at (644, 540), panel=True
+  handle_click: pos=(644, 540), n_items=5, rects=[<rect(624, 457, 72, 24)>, <rect(624, 481, 72, 24)>, <rect(624, 505, 72, 24)>, <rect(624, 529, 72, 24)>, <rect(624, 553, 72, 24)>]
+  HIT item 3: µÚÒ»ÅÚ±øÁ¬
+  clicked=µÚÒ»ÅÚ±øÁ¬, engine=True
+click at (691, 289), panel=False
+click at (641, 363), panel=True
+  handle_click: pos=(641, 363), n_items=5, rects=[<rect(695, 293, 72, 24)>, <rect(695, 317, 72, 24)>, <rect(695, 341, 72, 24)>, <rect(695, 365, 72, 24)>, <rect(695, 389, 72, 24)>]
+  outside panel, hiding
+  clicked=None, engine=True
+click at (706, 432), panel=False
+click at (730, 543), panel=True
+  handle_click: pos=(730, 543), n_items=5, rects=[<rect(710, 436, 72, 24)>, <rect(710, 460, 72, 24)>, <rect(710, 484, 72, 24)>, <rect(710, 508, 72, 24)>, <rect(710, 532, 72, 24)>]
+  HIT item 4: Õì²ìÅÅ
+  clicked=Õì²ìÅÅ, engine=True
+click at (749, 464), panel=False
+click at (776, 550), panel=True
+  handle_click: pos=(776, 550), n_items=5, rects=[<rect(753, 468, 72, 24)>, <rect(753, 492, 72, 24)>, <rect(753, 516, 72, 24)>, <rect(753, 540, 72, 24)>, <rect(753, 564, 72, 24)>]
+  HIT item 3: µÚÒ»ÅÚ±øÁ¬
+  clicked=µÚÒ»ÅÚ±øÁ¬, engine=True
+click at (649, 470), panel=False
+click at (670, 564), panel=True
+  handle_click: pos=(670, 564), n_items=5, rects=[<rect(653, 474, 72, 24)>, <rect(653, 498, 72, 24)>, <rect(653, 522, 72, 24)>, <rect(653, 546, 72, 24)>, <rect(653, 570, 72, 24)>]
+  HIT item 3: µÚÒ»ÅÚ±øÁ¬
+  clicked=µÚÒ»ÅÚ±øÁ¬, engine=True
+click at (280, 421), panel=False
+click at (272, 411), panel=False
+click at (234, 343), panel=False
+click at (357, 335), panel=False
+click at (347, 395), panel=False
+click at (680, 411), panel=False
+click at (699, 472), panel=True
+  handle_click: pos=(699, 472), n_items=5, rects=[<rect(684, 415, 72, 24)>, <rect(684, 439, 72, 24)>, <rect(684, 463, 72, 24)>, <rect(684, 487, 72, 24)>, <rect(684, 511, 72, 24)>]
+  HIT item 2: µÚÒ»Æï±øÁ¬
+  clicked=µÚÒ»Æï±øÁ¬, engine=True
+click at (622, 476), panel=False
+click at (643, 563), panel=True
+  handle_click: pos=(643, 563), n_items=5, rects=[<rect(626, 480, 72, 24)>, <rect(626, 504, 72, 24)>, <rect(626, 528, 72, 24)>, <rect(626, 552, 72, 24)>, <rect(626, 576, 72, 24)>]
+  HIT item 3: µÚÒ»ÅÚ±øÁ¬
+  clicked=µÚÒ»ÅÚ±øÁ¬, engine=True
+click at (956, 520), panel=False
+click at (981, 628), panel=True
+  handle_click: pos=(981, 628), n_items=5, rects=[<rect(960, 524, 72, 24)>, <rect(960, 548, 72, 24)>, <rect(960, 572, 72, 24)>, <rect(960, 596, 72, 24)>, <rect(960, 620, 72, 24)>]
+  HIT item 4: Õì²ìÅÅ
+  clicked=Õì²ìÅÅ, engine=True
+click at (563, 367), panel=False
+click at (587, 453), panel=True
+  handle_click: pos=(587, 453), n_items=5, rects=[<rect(567, 371, 72, 24)>, <rect(567, 395, 72, 24)>, <rect(567, 419, 72, 24)>, <rect(567, 443, 72, 24)>, <rect(567, 467, 72, 24)>]
+  HIT item 3: µÚÒ»ÅÚ±øÁ¬
+  clicked=µÚÒ»ÅÚ±øÁ¬, engine=True
+click at (749, 212), panel=False
+click at (687, 224), panel=True
+  handle_click: pos=(687, 224), n_items=5, rects=[<rect(753, 216, 72, 24)>, <rect(753, 240, 72, 24)>, <rect(753, 264, 72, 24)>, <rect(753, 288, 72, 24)>, <rect(753, 312, 72, 24)>]
+  outside panel, hiding
+  clicked=None, engine=True
+click at (765, 187), panel=False
+click at (705, 208), panel=True
+  handle_click: pos=(705, 208), n_items=5, rects=[<rect(769, 191, 72, 24)>, <rect(769, 215, 72, 24)>, <rect(769, 239, 72, 24)>, <rect(769, 263, 72, 24)>, <rect(769, 287, 72, 24)>]
+  outside panel, hiding
+  clicked=None, engine=True
+click at (758, 509), panel=False
+click at (786, 549), panel=True
+  clicked=ç¬¬äºŒæ­¥å…µè¿, engine=True
+click at (722, 396), panel=False
+click at (749, 435), panel=True
+  clicked=µÚ¶ş²½±øÁ¬, engine=True
+click at (653, 485), panel=False
+click at (670, 570), panel=True
+  clicked=µÚÒ»ÅÚ±øÁ¬, engine=True
+click at (587, 775), panel=False
+click at (899, 726), panel=False
+click at (685, 357), panel=False
+click at (705, 396), panel=True
+  clicked=µÚ¶ş²½±øÁ¬, engine=True
+click at (693, 405), panel=False
+click at (714, 492), panel=True
+  clicked=µÚÒ»ÅÚ±øÁ¬, engine=True
+click at (521, 282), panel=False
+click at (543, 370), panel=True
+  clicked=µÚÒ»ÅÚ±øÁ¬, engine=True
+click at (723, 395), panel=False
+click at (742, 459), panel=True
+  clicked=µÚÒ»Æï±øÁ¬, engine=True

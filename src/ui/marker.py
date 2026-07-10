@@ -65,17 +65,17 @@ def _create_font(size: int) -> pygame.font.Font:
 # ── 标记颜色映射 ──────────────────────────────────────────────────────
 
 MARKER_COLORS: dict[MarkerType, str] = {
-    MarkerType.FRIENDLY_GUESS: COLOR_MARKER_FRIENDLY,
-    MarkerType.ENEMY_GUESS: COLOR_MARKER_ENEMY,
-    MarkerType.HQ_GUESS: COLOR_MARKER_HQ,
-    MarkerType.CUSTOM_NOTE: COLOR_MARKER_NOTE,
+    MarkerType.FRIENDLY_GUESS: "#4488FF40",
+    MarkerType.ENEMY_GUESS: "#FF444440",
+    MarkerType.HQ_GUESS: "#FFD70040",
+    MarkerType.CUSTOM_NOTE: "#FFFFFF40",
 }
 
 MARKER_LABELS: dict[MarkerType, str] = {
-    MarkerType.FRIENDLY_GUESS: "友",
-    MarkerType.ENEMY_GUESS: "敌",
+    MarkerType.FRIENDLY_GUESS: "?",
+    MarkerType.ENEMY_GUESS: "?",
     MarkerType.HQ_GUESS: "HQ",
-    MarkerType.CUSTOM_NOTE: "注",
+    MarkerType.CUSTOM_NOTE: "?",
 }
 
 # 调色板配置
@@ -186,39 +186,23 @@ class MarkerSystem:
         self._palette_surface: Optional[pygame.Surface] = None
         self._palette_rects: dict[MarkerType, pygame.Rect] = {}
 
-        # ── Sprint 3: 调色板脏标志（悬停变化时重建） ──────────────
-        self._palette_dirty: bool = True
+        # ── RTT 标记托盘对接 ──────────────────────────────────────
+        self._rtt_palette = None
+        self._rtt_palette_rect: Optional[pygame.Rect] = None
+        self._rtt_dragging_key: Optional[str] = None  # 正在拖拽的托盘 key
 
-        # ── Sprint 3: 性能缓存 ────────────────────────────────────
-        self._font = _create_font(14)  # 预创建字体（支持中文），避免每帧分配
+        # ── 移动跟踪（数字拖拽 A→B 记录） ─────────────────────────
+        self._last_digit_drag: dict | None = None
+        self._rtt_drag_from = None
 
-        # ── Sprint 3: 动画状态 ────────────────────────────────────
-        # 放置弹入动画: (marker_type, coord, start_ms, duration_ms)
-        self._drop_animations: list[tuple[MarkerType, Coordinate, int, int]] = []
-        # 调色板悬停
-        self._hovered_type: Optional[MarkerType] = None
-        self._last_deleted: Optional[Marker] = None  # Sprint 3: Ctrl+Z 撤销
+    def get_last_drag(self) -> dict | None:
+        """返回最近一次数字标记拖拽信息 {digit, from_coord, to_coord}。"""
+        return self._last_digit_drag
 
-        # ── Sprint 3: 预渲染 marker overlay（每种类型一个 Surface） ──
-        self._marker_overlay_cache: dict[MarkerType, pygame.Surface] = {}
-        self._build_marker_overlays()
-
-    def _build_marker_overlays(self) -> None:
-        """Sprint 3: 预渲染每种 MarkerType 的 overlay Surface。
-
-        创建单个固定尺寸的半透明方块，供 draw_markers() 复用 blit，
-        消除每帧 N 次 Surface 分配。
-        """
-        size = TILE_SIZE - 4
-        for mtype in MarkerType:
-            rgba = _hex_to_rgba(MARKER_COLORS[mtype])
-            overlay = pygame.Surface((size, size), pygame.SRCALPHA)
-            pygame.draw.rect(overlay, rgba, overlay.get_rect(), border_radius=4)
-            pygame.draw.rect(
-                overlay, (rgba[0], rgba[1], rgba[2], 255),
-                overlay.get_rect(), 2, border_radius=4,
-            )
-            self._marker_overlay_cache[mtype] = overlay
+    def set_palette(self, palette, rect: pygame.Rect) -> None:
+        """对接 RTT MarkerPalette。"""
+        self._rtt_palette = palette
+        self._rtt_palette_rect = rect
 
     # ── 公开方法：标记管理 ──────────────────────────────────────────
 
@@ -313,6 +297,17 @@ class MarkerSystem:
         # ── 鼠标按下 ──────────────────────────────────────────────
         if event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:  # 左键
+                # ── RTT 托盘拖拽 ──────────────────────────────────
+                if self._rtt_palette is not None and self._rtt_palette_rect is not None:
+                    if self._rtt_palette_rect.collidepoint(event.pos):
+                        item = self._rtt_palette.get_item_at(event.pos)
+                        if item is None:
+                            return False  # 空白区域，不拖拽
+                        self._dragging_type = MarkerType.FRIENDLY_GUESS
+                        self._dragging_pos = event.pos
+                        self._rtt_dragging_key = item
+                        return True
+
                 # 检查是否点击了调色板
                 marker_type = self._hit_test_palette(event.pos)
                 if marker_type is not None:
@@ -333,9 +328,9 @@ class MarkerSystem:
                             self._selected_marker = marker.marker_id
                             self._dragging_type = marker.marker_type
                             self._dragging_pos = event.pos
-                            # 移除旧标记（拖拽移动 = 删旧 + 放新）
+                            self._rtt_dragging_key = marker.label or None
+                            self._rtt_drag_from = coord
                             self.remove_marker(marker.marker_id)
-                            logger.debug("开始移动标记: %s", marker.marker_id)
                             return True
 
             elif event.button == 3:  # 右键删除
@@ -372,20 +367,20 @@ class MarkerSystem:
                         event.pos[1] - self._map_offset[1],
                     )
                     if coord is not None:
-                        # Sprint 3: 放置弹入动画（250ms，scale 1.4→1.0）
-                        self._drop_animations.append((
-                            self._dragging_type,
-                            coord,
-                            pygame.time.get_ticks(),
-                            250,
-                        ))
-                        self.add_marker(self._dragging_type, coord)
-                        logger.debug(
-                            "放置标记: %s @(%d,%d)",
-                            self._dragging_type.value,
-                            coord.x,
-                            coord.y,
-                        )
+                        # RTT 托盘标记
+                        if self._rtt_dragging_key is not None:
+                            self.add_marker(MarkerType.FRIENDLY_GUESS, coord, self._rtt_dragging_key)
+                            # 如果是数字且拖动了已有标记，记录 from→to
+                            if self._rtt_dragging_key.isdigit() and self._rtt_drag_from is not None:
+                                self._last_digit_drag = {
+                                    "digit": self._rtt_dragging_key,
+                                    "from_coord": self._rtt_drag_from,
+                                    "to_coord": coord,
+                                }
+                            self._rtt_dragging_key = None
+                            self._rtt_drag_from = None
+                        else:
+                            self.add_marker(self._dragging_type, coord)
                 self._dragging_type = None
                 return True
 
@@ -484,88 +479,39 @@ class MarkerSystem:
             screen.blit(self._palette_surface, dest)
 
     def draw_markers(
-        self,
-        surface: pygame.Surface,
-        map_widget: object,
+        self, surface: pygame.Surface, map_widget,
     ) -> None:
-        """在地图 Surface 上绘制所有标记（含放置弹入动画）。
-
-        Args:
-            surface: 地图 Surface（非屏幕）
-            map_widget: MapWidget 实例（用于 coord_to_rect）
-        """
-        font = self._font
-        now_ms = pygame.time.get_ticks()
-
-        # ── Sprint 3: 清理已完成的放置动画 ──────────────────────────
-        self._drop_animations = [
-            (mt, coord, start, dur)
-            for mt, coord, start, dur in self._drop_animations
-            if now_ms - start < dur
-        ]
-
+        """RTT 渲染标记：数字用字体，图标用图片，不再用色块。"""
         for marker in self._markers:
             rect = map_widget.coord_to_rect(marker.coord)
             local_rect = pygame.Rect(
                 rect.x - map_widget.rect.x - map_widget._map_offset[0],
                 rect.y - map_widget.rect.y - map_widget._map_offset[1],
-                rect.width,
-                rect.height,
+                rect.width, rect.height,
             )
 
-            rgba = _hex_to_rgba(MARKER_COLORS[marker.marker_type])
-
-            # Sprint 3: 检测该标记是否处于放置动画中
-            scale = 1.0
-            alpha_override = rgba[3]
-            for mt, coord, start, dur in self._drop_animations:
-                if mt == marker.marker_type and coord == marker.coord:
-                    elapsed = now_ms - start
-                    t = min(1.0, elapsed / dur)
-                    scale = 1.4 - 0.4 * t
-                    alpha_override = int(80 + 175 * t)
-                    break
-
-            # Sprint 3: 使用缓存的 overlay（消除每帧 Surface 分配）
-            size = int(local_rect.width * scale)
-            cached = self._marker_overlay_cache.get(marker.marker_type)
-            if cached is not None and scale == 1.0:
-                overlay = cached.copy()
-            elif cached is not None:
-                overlay = pygame.transform.scale(cached, (size, size))
+            if marker.label and marker.label.isdigit():
+                # 数字标记：灰铅笔色大号数字
+                font = pygame.font.Font("C:/Windows/Fonts/simhei.ttf", max(12, rect.width))
+                text = font.render(marker.label, True, (90, 85, 75))
+                text_rect = text.get_rect(center=local_rect.center)
+                surface.blit(text, text_rect)
+            elif marker.label and "_" in marker.label:
+                # 兵种图标标记
+                icon = self._rtt_palette.get_unit_icon(marker.label) if self._rtt_palette else None
+                if icon:
+                    scaled = pygame.transform.smoothscale(icon, (rect.width, rect.height))
+                    surface.blit(scaled, local_rect.topleft)
+                else:
+                    # fallback 小灰点
+                    pygame.draw.circle(surface, (128, 128, 128, 100),
+                                       local_rect.center, rect.width // 3)
             else:
-                overlay = pygame.Surface((size, size), pygame.SRCALPHA)
-                pygame.draw.rect(overlay, (rgba[0], rgba[1], rgba[2], alpha_override),
-                                 overlay.get_rect(), border_radius=4)
-                pygame.draw.rect(
-                    overlay, (rgba[0], rgba[1], rgba[2], alpha_override),
-                    overlay.get_rect(), 2, border_radius=4,
-                )
+                # 无标签标记：小灰点
+                pygame.draw.circle(surface, (128, 128, 128, 100),
+                                   local_rect.center, rect.width // 3)
 
-            overlay.set_alpha(alpha_override)
-            # Bug 14 fix: 居中 overlay（36px → 40px tile 中心）
-            offset_x = (local_rect.width - overlay.get_width()) // 2
-            offset_y = (local_rect.height - overlay.get_height()) // 2
-            surface.blit(overlay, (local_rect.x + offset_x, local_rect.y + offset_y))
-
-            # 标签文字
-            label = marker.label if marker.label else MARKER_LABELS[marker.marker_type]
-            text = font.render(label, True, (255, 255, 255))
-            text_rect = text.get_rect(center=local_rect.center)
-            surface.blit(text, text_rect)
-
-        # ── 渲染拖拽中的标记（半透明跟随鼠标） ────────────────────
-        if self._dragging_type is not None and map_widget is not None:
-            rgba = _hex_to_rgba(MARKER_COLORS[self._dragging_type])
-            # 降低不透明度以表示拖拽状态
-            rgba = (rgba[0], rgba[1], rgba[2], max(80, rgba[3] // 2))
-            # 相对于地图 Surface 的鼠标位置
-            local_x = self._dragging_pos[0] - map_widget.rect.x - self._map_offset[0]
-            local_y = self._dragging_pos[1] - map_widget.rect.y - self._map_offset[1]
-            size = TILE_SIZE - 4
-            ghost = pygame.Surface((size, size), pygame.SRCALPHA)
-            pygame.draw.rect(ghost, rgba, ghost.get_rect(), border_radius=4)
-            surface.blit(ghost, (local_x - size // 2, local_y - size // 2))
+        # 不渲染拖拽幽灵（消除残影）
 
     # ── 私有方法 ──────────────────────────────────────────────────
 

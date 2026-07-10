@@ -1,10 +1,9 @@
 # BlindCommand 底层数据层设计规范（CORE_SPEC）
 
-> **版本**: v1.1  
-> **负责人**: #2（底层架构 Vibe 程序员）  
-> **范围**: `src/core/` 下除 Phase 0 已定稿文件（`constants.py` / `types.py` / `events.py` / `interfaces.py` / `event_bus.py`）之外的全部模块  
-> **依赖文档**: `DESIGN.md`（做什么）、`WORKFLOW.md`（谁来做/怎么做）、`STYLE_GUIDE.md`（怎么写）、`TECH_STACK.md`（工具链）、`PROMPTS.md`（AI 生成模板）  
-> **最后更新**: 2026-07-08
+> **版本**: v1.2  
+> **负责人**: #2 / #1  
+> **⚠️ 注意**: §8 GameLoop（回合制主循环）已被 `RTT_SPEC.md` 替代。§1-7（接口、常量、unit_base、map、range_utils、fog_of_war）仍然有效。  
+> **最后更新**: 2026-07-09
 
 ---
 

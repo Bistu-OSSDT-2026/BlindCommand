@@ -380,31 +380,16 @@ class IFogOfWar(ABC):
 
 
 # ============================================================================
-# 第五部分：游戏主循环接口（#2 实现）
+# 第五部分：游戏引擎接口（#2 实现，RTT）
 # ============================================================================
 
 
-class IGameLoop(ABC):
-    """游戏主循环接口。"""
+class IEngine(ABC):
+    """RTT 游戏引擎接口。替代旧 IGameLoop。"""
 
     @abstractmethod
-    def start(self) -> None:
-        """启动游戏主循环。"""
-        ...
-
-    @abstractmethod
-    def pause(self) -> None:
-        """暂停游戏。"""
-        ...
-
-    @abstractmethod
-    def resume(self) -> None:
-        """恢复游戏。"""
-        ...
-
-    @abstractmethod
-    def get_current_turn(self) -> int:
-        """获取当前回合数。"""
+    def get_elapsed_time(self) -> float:
+        """获取游戏已运行时间（秒）。"""
         ...
 
     @abstractmethod
@@ -422,9 +407,25 @@ class IGameLoop(ABC):
         """检查胜利/失败条件。"""
         ...
 
+    @abstractmethod
+    def pause(self) -> None:
+        """暂停游戏。"""
+        ...
+
+    @abstractmethod
+    def resume(self) -> None:
+        """恢复游戏。"""
+        ...
+
+    @property
+    @abstractmethod
+    def is_paused(self) -> bool:
+        """是否已暂停。"""
+        ...
+
 
 # ============================================================================
-# 第六部分：指令系统接口（#3 实现）
+# 第六部分：指令系统接口（#3 实现，RTT）
 # ============================================================================
 
 
@@ -452,41 +453,40 @@ class ICommand(ABC):
             game_state: 当前游戏状态（只读查询）
 
         Returns:
-            True 如果指令执行完成（不再需要继续），False 如果还需要下回合继续
+            True 如果指令执行完成，False 如果需要继续
         """
         ...
 
     @abstractmethod
     def get_human_description(self) -> str:
-        """返回人类可读的指令描述（用于战报）。"""
+        """返回人类可读的指令描述。"""
         ...
 
 
 class ICommander(ABC):
-    """指令管理与传达系统接口（#3 实现）。"""
+    """指令管理与传达系统接口（#3 实现，RTT）。"""
 
     @abstractmethod
     def issue_command(
-        self, unit_id: str, command_type: CommandType, params: dict[str, object]
+        self, unit_id: str, command_type: CommandType, params: dict,
+        current_time: float = 0
     ) -> bool:
-        """向指定单位下达指令。指令进入传达队列，经历通信延迟后到达。
+        """向指定单位下达指令。经历通信延迟后到达。
 
         Args:
             unit_id: 目标单位 ID
-            command_type: 指令类型
-            params: 指令参数（如 {"x": 10, "y": 5}）
+            command_type: 指令类型（MOVE / RETREAT）
+            params: 指令参数（如 {"direction": "NE", "distance": 5}）
+            current_time: 当前游戏时间（秒）
 
         Returns:
-            True 如果指令有效（单位存在且存活）
+            True 如果指令有效
         """
         ...
 
     @abstractmethod
-    def process_command_queue(self, current_turn: int) -> list[ICommand]:
-        """处理传达队列，返回本回合到期的指令列表。
-
-        由主循环每回合调用。
-        """
+    def process_command_queue(self, current_time: float) -> list[ICommand]:
+        """处理传达队列，返回本时刻到期的指令列表。"""
         ...
 
     @abstractmethod
@@ -501,12 +501,12 @@ class ICommander(ABC):
 
 
 # ============================================================================
-# 第七部分：游戏状态只读接口（供指令执行时查询上下文）
+# 第七部分：游戏状态只读接口（RTT）
 # ============================================================================
 
 
 class IGameState(ABC):
-    """游戏状态只读查询接口。#3 的指令执行时通过此接口获取上下文。"""
+    """游戏状态只读查询接口（RTT）。"""
 
     @abstractmethod
     def get_unit_by_id(self, unit_id: str) -> Optional[IUnit]:
@@ -524,13 +524,8 @@ class IGameState(ABC):
         ...
 
     @abstractmethod
-    def get_fog(self) -> IFogOfWar:
-        """获取迷雾/视野管理器（供 #4 UI 查询可见性）。"""
-        ...
-
-    @abstractmethod
-    def get_current_turn(self) -> int:
-        """获取当前回合数。"""
+    def get_elapsed_time(self) -> float:
+        """获取游戏已运行时间（秒）。"""
         ...
 
 

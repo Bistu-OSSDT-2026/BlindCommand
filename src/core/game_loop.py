@@ -1,9 +1,7 @@
 """
-BlindCommand 游戏主循环 — IGameLoop + IGameState 的具体实现
-===============================================================
-本模块提供 `GameLoop` 类：组装地图、单位、范围检索、迷雾；
-驱动 8 阶段回合时序（DESIGN.md §6.1）；维护回合数与游戏结果；
-提供只读状态查询（IGameState）供 #3 指令执行。
+[DEPRECATED] 回合制 GameLoop — 已被 RTT RealTimeEngine 替代。
+保留用于参考。新代码请使用 src.core.engine.RealTimeEngine。
+"""
 
 关键设计（CORE_SPEC.md §8）：
 - #3 拥有的阶段（指令处理、战斗结算、AI 决策）通过构造注入的可调用钩子接入
