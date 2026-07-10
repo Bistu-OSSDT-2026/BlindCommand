@@ -18,12 +18,15 @@ Sprint 2 新增：
     C4: 禁止直接修改地图数据
     C5: 所有游戏状态变化只能通过 EventBus 获知
 
-版本: v0.2.0 — Sprint 2
+	版本: v1.0.0
 """
 
 from __future__ import annotations
 
 import logging
+import sys
+from pathlib import Path
+import sys
 from typing import TYPE_CHECKING, Optional
 
 import pygame
@@ -56,6 +59,34 @@ logger = logging.getLogger(__name__)
 COLOR_BG       = (30, 30, 30)    # 整体背景
 COLOR_PANEL_BG = (26, 26, 26)    # 面板背景
 COLOR_BORDER   = (60, 60, 60)    # 分隔线
+
+
+def _find_cjk_font(base_dir: Path) -> str | None:
+    """查找可用中文字体。优先系统绝对路径（PyInstaller 中 SDL 搜索失效仍可用）。
+
+    Args:
+        base_dir: 项目根目录（用于定位捆绑字体）
+
+    Returns:
+        字体文件绝对路径，若未找到任何可用字体返回 None
+    """
+    import os as _os
+    # 1) 系统字体目录（SDL 无法搜索，但绝对路径仍可加载）
+    _fonts_dir = _os.environ.get("WINDIR", "C:/Windows") + "/Fonts"
+    for _name in ("msyh.ttc", "msyh.ttf", "simkai.ttf", "simsun.ttc"):
+        _fp = _os.path.join(_fonts_dir, _name)
+        if _os.path.exists(_fp):
+            return _fp
+    # 2) 捆绑字体
+    _bundled = base_dir / "data" / "chinese.ttf"
+    if _bundled.exists():
+        return str(_bundled)
+    # 3) SDL 搜索（开发环境）
+    for _name in ("microsoftyahei", "simhei"):
+        _path = pygame.font.match_font(_name)
+        if _path:
+            return _path
+    return None
 
 
 class MainWindow:
@@ -371,6 +402,11 @@ class MainWindow:
         if dx > 0: parts.append("E")
         return "".join(parts)
 
+            # ── Sprint 3: 文本输入变化 → 实时坐标校验 ────────────
+            if event.type == pygame_gui.UI_TEXT_ENTRY_CHANGED:
+                if event.ui_element in (self.command_panel.entry_x, self.command_panel.entry_y):
+                    self.command_panel.validate_inputs()
+
     # ── 私有方法：更新 ────────────────────────────────────────────
 
     def _update(self, time_delta: float) -> None:
@@ -426,7 +462,7 @@ class MainWindow:
 
     def _draw_panel_decorations(self) -> None:
         """绘制面板背景和分隔线（非 pygame_gui 控件）。"""
-        layout = self._calculate_layout(WINDOW_WIDTH, WINDOW_HEIGHT)
+        layout = self._layout
 
         # 左侧战报面板背景
         br = layout["battle_log_rect"]

@@ -8,8 +8,7 @@ src/core — 底层数据层（#2 负责）
 """
 
 # ── 常量 ──────────────────────────────────────────────────────────────
-from src.core.constants import (
-    # 游戏规则
+from src.core.constants import (  # 游戏规则; 兵种配置; 枚举; 事件载荷; 数据类; 地形配置; 查询函数
     CAPTURE_REQUIRED_TURNS,
     COMBAT_MIN_DAMAGE,
     COMBAT_TYPE_ADVANTAGE_MULT,
@@ -24,18 +23,14 @@ from src.core.constants import (
     MAX_TURNS,
     TERRAIN_PROPS,
     TERRAIN_SYMBOLS,
-    # 兵种配置
     TYPE_ADVANTAGE,
     UNIT_DISPLAY_NAMES,
     UNIT_STATS,
-    # 枚举
     BattleOutcome,
-    # 事件载荷
     BattleResultPayload,
     CommandArrivedPayload,
     CommandSentPayload,
     CommandType,
-    # 数据类
     Coordinate,
     Direction,
     EnemySpottedPayload,
@@ -46,14 +41,12 @@ from src.core.constants import (
     HqCapturedPayload,
     MarkerType,
     PositionReportPayload,
-    # 地形配置
     TerrainProps,
     TerrainType,
     UnitDamagedPayload,
     UnitKilledPayload,
     UnitStats,
     UnitType,
-    # 查询函数
     get_advantage_multiplier,
     get_move_cost,
     get_terrain_props,

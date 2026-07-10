@@ -163,6 +163,7 @@ class UnitBase(IUnit):
     @terrain_defense_bonus.setter
     def terrain_defense_bonus(self, value: int) -> None:
         self._terrain_defense_bonus = value
+        self._terrain_defense_explicitly_set = True
 
     # ── RTT 移动 ──────────────────────────────────────────────────────
 
@@ -254,6 +255,12 @@ class UnitBase(IUnit):
         if not self._is_alive:
             return False
         if self._game_map is None:
+            if target.x < 0 or target.y < 0:
+                logger.warning(
+                    "move_to: 单位 %s 在测试模式下移动到无效坐标 %s（负值），"
+                    "但仍允许移动",
+                    self._unit_id, target
+                )
             self._position = target
             self._float_x = float(target.x)
             self._float_y = float(target.y)
@@ -271,6 +278,17 @@ class UnitBase(IUnit):
             self._float_y = float(target.y)
             return True
         return False
+
+    def set_position(self, target: Coordinate) -> None:
+        """直接设置单位坐标（绕过寻路与地图占用更新）。
+
+        供 #3 Commander 在已自行处理 map.move_unit 后同步单位内部坐标。
+        普通移动应使用 move_to()。
+
+        Args:
+            target: 新坐标
+        """
+        self._position = target
 
     def attack_target(self, target: IUnit) -> int:
         if not self.can_attack(target):
@@ -292,6 +310,6 @@ class UnitBase(IUnit):
         status = "存活" if self._is_alive else "阵亡"
         hp_pct = int(self._current_hp / self._max_hp * 100) if self._max_hp else 0
         return (
-            f"{self._name}（{UNIT_DISPLAY_NAMES[self._unit_type]}）"
+            f"{self._name}（{UNIT_DISPLAY_NAMES.get(self._unit_type, self._unit_type.value)}）"
             f" [{status}] HP {self._current_hp}/{self._max_hp} ({hp_pct}%)"
         )

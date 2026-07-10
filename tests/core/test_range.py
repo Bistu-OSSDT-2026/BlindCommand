@@ -17,7 +17,6 @@ from src.core.constants import (
 from src.core.range_utils import RangeQuery
 from src.core.unit_base import UnitBase
 
-
 # ── 辅助 ──────────────────────────────────────────────────────────────
 
 def _make_unit(uid: str, x: int, y: int, faction: Faction, utype: UnitType) -> UnitBase:

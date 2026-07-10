@@ -9,20 +9,18 @@ BlindCommand 公共类型定义
 版本：v1.0
 """
 
-from src.core.constants import (  # noqa: F401  — 重导出
-    # ── 数据类 ──────────────────────────────────────────────────────
-    Coordinate,
-    UnitStats,
-    TerrainProps,
-    # ── 枚举 ────────────────────────────────────────────────────────
+from src.core.constants import (  # noqa: F401  — 重导出; ── 枚举 ────────────────────────────────────────────────────────; ── 数据类 ──────────────────────────────────────────────────────
     BattleOutcome,
     CommandType,
+    Coordinate,
     Direction,
     Faction,
     GameEventType,
     GameResult,
     MarkerType,
+    TerrainProps,
     TerrainType,
+    UnitStats,
     UnitType,
 )
 

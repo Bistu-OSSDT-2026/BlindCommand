@@ -31,6 +31,37 @@ from src.core.constants import (
 
 logger = logging.getLogger(__name__)
 
+
+# ── 字体辅助 ──────────────────────────────────────────────────────────
+
+def _create_font(size: int) -> pygame.font.Font:
+    """创建字体。优先系统字体绝对路径 → 捆绑字体 → 默认字体。"""
+    import os as _os
+    import sys as _sys
+    from pathlib import Path as _Path
+    # 1) 系统字体目录
+    _fonts_dir = _os.environ.get("WINDIR", "C:/Windows") + "/Fonts"
+    for _name in ("msyh.ttc", "msyh.ttf", "simkai.ttf", "simsun.ttc"):
+        _fp = _os.path.join(_fonts_dir, _name)
+        if _os.path.exists(_fp):
+            try:
+                return pygame.font.Font(_fp, size)
+            except Exception:
+                continue
+    # 2) 捆绑字体
+    if getattr(_sys, "frozen", False):
+        _base = _Path(_sys._MEIPASS)
+    else:
+        _base = _Path(__file__).resolve().parent.parent.parent
+    _bundled = _base / "data" / "chinese.ttf"
+    if _bundled.exists():
+        try:
+            return pygame.font.Font(str(_bundled), size)
+        except Exception:
+            pass
+    return pygame.font.Font(None, size)
+
+
 # ── 标记颜色映射 ──────────────────────────────────────────────────────
 
 MARKER_COLORS: dict[MarkerType, str] = {
@@ -192,7 +223,7 @@ class MarkerSystem:
         return marker
 
     def remove_marker(self, marker_id: str) -> bool:
-        """移除指定标记。
+        """移除指定标记。保存到撤销缓冲以供 Ctrl+Z 恢复。
 
         Args:
             marker_id: 标记 ID
@@ -202,12 +233,28 @@ class MarkerSystem:
         """
         for i, m in enumerate(self._markers):
             if m.marker_id == marker_id:
+                self._last_deleted = m  # Sprint 3: 撤销缓冲
                 self._markers.pop(i)
                 if self._selected_marker == marker_id:
                     self._selected_marker = None
                 logger.debug("移除标记: %s", marker_id)
                 return True
         return False
+
+    def undo_last_delete(self) -> Optional[Marker]:
+        """恢复最近删除的标记（Ctrl+Z）。
+
+        Returns:
+            恢复的 Marker，若无待恢复返回 None
+        """
+        if self._last_deleted is None:
+            return None
+        restored = self._last_deleted
+        self._markers.append(restored)
+        self._last_deleted = None
+        logger.debug("撤销删除，恢复标记: %s @(%d,%d)",
+                     restored.marker_id, restored.coord.x, restored.coord.y)
+        return restored
 
     def get_marker_at_coord(self, coord: Coordinate) -> Optional[Marker]:
         """获取指定坐标上的第一个标记。
@@ -234,7 +281,7 @@ class MarkerSystem:
 
     # ── 公开方法：事件处理 ──────────────────────────────────────────
 
-    def handle_event(self, event: pygame.event.Event, map_widget) -> bool:
+    def handle_event(self, event: pygame.event.Event, map_widget: object) -> bool:
         """处理鼠标/键盘事件。
 
         应由 MainWindow._handle_events() 在 pygame_gui 处理之后调用。
@@ -303,6 +350,12 @@ class MarkerSystem:
         elif event.type == pygame.MOUSEMOTION:
             if self._dragging_type is not None:
                 self._dragging_pos = event.pos
+                return True
+            # Sprint 3: 调色板悬停检测
+            hovered = self._hit_test_palette(event.pos)
+            if hovered != self._hovered_type:
+                self._hovered_type = hovered
+                self._palette_dirty = True
                 return True
 
         # ── 鼠标释放（放置标记） ──────────────────────────────────
@@ -374,7 +427,7 @@ class MarkerSystem:
         self._palette_surface.fill((0, 0, 0, 0))
         self._palette_rects.clear()
 
-        font = pygame.font.Font(None, 14)
+        font = self._font
 
         for i, mtype in enumerate(types):
             item_x = (PALETTE_WIDTH - PALETTE_ITEM_SIZE) // 2
@@ -386,10 +439,17 @@ class MarkerSystem:
             )
 
             rgba = _hex_to_rgba(MARKER_COLORS[mtype])
+
+            # Sprint 3: 悬停项 100% 亮度，其余 60%
+            is_hovered = self._hovered_type == mtype
+            if not is_hovered:
+                rgba = (rgba[0], rgba[1], rgba[2], int(rgba[3] * 0.6))
+
             pygame.draw.rect(self._palette_surface, rgba, rect, border_radius=4)
+            border_alpha = 255 if is_hovered else 120
             pygame.draw.rect(
                 self._palette_surface,
-                (rgba[0], rgba[1], rgba[2], 255),
+                (rgba[0], rgba[1], rgba[2], border_alpha),
                 rect,
                 2,
                 border_radius=4,
@@ -402,12 +462,19 @@ class MarkerSystem:
             self._palette_surface.blit(text, text_rect)
 
     def draw_palette(self, screen: pygame.Surface, dest: tuple[int, int]) -> None:
-        """将调色板 blit 到屏幕。
+        """将调色板 blit 到屏幕。Sprint 3: 悬停变化时重建。
 
         Args:
             screen: 目标 Surface
             dest: 调色板在屏幕上的位置
         """
+        if self._palette_dirty:
+            # 重建调色板以反映悬停状态
+            palette_rect = self._palette_rects.get(MarkerType.FRIENDLY_GUESS)
+            if palette_rect is not None:
+                self.build_palette(dest[0], dest[1], self._palette_surface.get_height() if self._palette_surface else 200)
+            self._palette_dirty = False
+
         if self._palette_surface is not None:
             screen.blit(self._palette_surface, dest)
 

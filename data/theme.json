@@ -1,0 +1,99 @@
+{
+    "_comment": "BlindCommand pygame_gui 暗色主题 — Sprint 3",
+    "defaults": {
+        "font": {
+            "name": "chinese.ttf",
+            "size": "14",
+            "bold": "0",
+            "italic": "0"
+        },
+        "colours": {
+            "normal_bg": "#2A2A2A",
+            "hovered_bg": "#3A3A3A",
+            "disabled_bg": "#1A1A1A",
+            "selected_bg": "#4A4A4A",
+            "dark_bg": "#1A1A1A",
+            "normal_text": "#CCCCCC",
+            "hovered_text": "#FFFFFF",
+            "selected_text": "#FFD700",
+            "disabled_text": "#666666",
+            "link_text": "#4488FF",
+            "normal_border": "#555555",
+            "hovered_border": "#888888",
+            "disabled_border": "#333333",
+            "selected_border": "#FFD700"
+        }
+    },
+    "button": {
+        "colours": {
+            "normal_bg": "#3A3A3A",
+            "hovered_bg": "#4A4A4A",
+            "disabled_bg": "#2A2A2A",
+            "selected_bg": "#FFD700",
+            "normal_text": "#CCCCCC",
+            "hovered_text": "#FFFFFF",
+            "disabled_text": "#666666",
+            "normal_border": "#555555",
+            "hovered_border": "#FFD700"
+        },
+        "misc": {
+            "border_width": "1",
+            "shape": "rounded_rectangle",
+            "shape_corner_radius": "4"
+        }
+    },
+    "drop_down_menu": {
+        "colours": {
+            "normal_bg": "#3A3A3A",
+            "hovered_bg": "#4A4A4A",
+            "disabled_bg": "#2A2A2A",
+            "selected_bg": "#4A4A4A",
+            "normal_text": "#CCCCCC",
+            "hovered_text": "#FFFFFF",
+            "selected_text": "#FFD700",
+            "normal_border": "#555555",
+            "hovered_border": "#888888"
+        }
+    },
+    "text_entry_line": {
+        "colours": {
+            "normal_bg": "#222222",
+            "hovered_bg": "#2A2A2A",
+            "disabled_bg": "#1A1A1A",
+            "selected_bg": "#2A2A2A",
+            "normal_text": "#CCCCCC",
+            "selected_text": "#FFFFFF",
+            "normal_border": "#555555",
+            "hovered_border": "#888888",
+            "selected_border": "#4488FF"
+        },
+        "misc": {
+            "border_width": "1",
+            "shape": "rounded_rectangle",
+            "shape_corner_radius": "3"
+        }
+    },
+    "text_box": {
+        "colours": {
+            "normal_bg": "#1A1A1A",
+            "hovered_bg": "#1A1A1A",
+            "selected_bg": "#1A1A1A",
+            "normal_text": "#CCCCCC",
+            "selected_text": "#FFFFFF",
+            "normal_border": "#333333",
+            "selected_border": "#333333"
+        },
+        "misc": {
+            "border_width": "0",
+            "shape": "rectangle"
+        }
+    },
+    "vertical_scroll_bar": {
+        "colours": {
+            "normal_bg": "#1A1A1A",
+            "hovered_bg": "#2A2A2A",
+            "dark_bg": "#111111",
+            "normal_border": "#333333"
+        }
+    }
+}

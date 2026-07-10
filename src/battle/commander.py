@@ -32,6 +32,12 @@ logger = logging.getLogger(__name__)
 
 _DIRS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
 
+# ── 指令机制内部常量 ──────────────────────────────────────────────────
+
+_HOLD_DEFENSE_BONUS: int = 1        # HOLD 驻守时临时防御加成
+_SCOUT_VISION_BONUS: int = 2        # SCOUT 侦察时视野临时扩大的格数
+_RETREAT_SPEED_BONUS: int = 2       # RETREAT 撤退时额外移动格数
+
 
 def _adjacent_directions(d: str) -> list[str]:
     """返回主方向的两侧邻向（45°偏）。"""

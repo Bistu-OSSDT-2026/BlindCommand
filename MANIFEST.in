@@ -1,0 +1,10 @@
+# BlindCommand — sdist 包包含清单
+# 确保非 Python 文件在 pip install / source distribution 中不丢失
+
+include README
+include LICENSE
+include requirements.txt
+include requirements-dev.txt
+
+recursive-include data *.json
+recursive-include src/ui/assets *.png

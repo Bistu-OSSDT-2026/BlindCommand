@@ -18,14 +18,12 @@
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from src.core.constants import (
     COMMAND_DELAY_MAX,
     COMMAND_DELAY_MIN,
     COMMAND_DELAY_WEIGHTS,
-    CommandType,
 )
 
 if TYPE_CHECKING:
@@ -140,9 +138,15 @@ class CommandQueue:
 
         Returns:
             延迟回合数，范围 [COMMAND_DELAY_MIN, COMMAND_DELAY_MAX]
+
+        Raises:
+            ValueError: 若 COMMAND_DELAY_WEIGHTS 长度与延迟值数量不匹配
         """
-        return self._rng.choices(
-            [COMMAND_DELAY_MIN, COMMAND_DELAY_MIN + 1, COMMAND_DELAY_MAX],
-            weights=COMMAND_DELAY_WEIGHTS,
-            k=1,
-        )[0]
+        values = list(range(COMMAND_DELAY_MIN, COMMAND_DELAY_MAX + 1))
+        if len(values) != len(COMMAND_DELAY_WEIGHTS):
+            raise ValueError(
+                f"COMMAND_DELAY_WEIGHTS 长度 ({len(COMMAND_DELAY_WEIGHTS)}) "
+                f"与延迟范围 [{COMMAND_DELAY_MIN}, {COMMAND_DELAY_MAX}] "
+                f"({len(values)} 个值) 不匹配"
+            )
+        return self._rng.choices(values, weights=COMMAND_DELAY_WEIGHTS, k=1)[0]
