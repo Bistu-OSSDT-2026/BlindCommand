@@ -229,7 +229,7 @@ class Commander(ICommander):
             tx = max(0, min(self._map.width - 1, tx))
             ty = max(0, min(self._map.height - 1, ty))
             target = Coordinate(tx, ty)
-            if self._map.is_passable(target) and hasattr(unit, 'set_destination'):
-                if unit.set_destination(target):
+            if (self._map.is_passable(target) and hasattr(unit, 'set_destination')
+                    and unit.set_destination(target)):
                     return f"{unit.name} 向{direction}方向撤退！"
         return f"{unit.name} 无法撤退"
