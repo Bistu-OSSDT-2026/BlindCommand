@@ -188,6 +188,16 @@ class MarkerSystem:
         self._last_digit_drag: dict | None = None
         self._rtt_drag_from = None
 
+        # ── Sprint 3: 调色板悬停 ──────────────────────────────────
+        self._hovered_type: Optional[MarkerType] = None
+        self._palette_dirty: bool = True
+
+        # ── 撤销缓冲 ──────────────────────────────────────────────
+        self._last_deleted: Optional[Marker] = None
+
+        # ── 字体 ──────────────────────────────────────────────────
+        self._font: pygame.font.Font = _create_font(16)
+
     def get_last_drag(self) -> dict | None:
         """返回最近一次数字标记拖拽信息 {digit, from_coord, to_coord}。"""
         return self._last_digit_drag
