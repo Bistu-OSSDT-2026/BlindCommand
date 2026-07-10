@@ -145,7 +145,8 @@ class MainWindow:
             (WINDOW_WIDTH, WINDOW_HEIGHT))
 
         # ── 布局 ──────────────────────────────────────────────────
-        layout = self._calculate_layout(WINDOW_WIDTH, WINDOW_HEIGHT)
+        self._layout = self._calculate_layout(WINDOW_WIDTH, WINDOW_HEIGHT)
+        layout = self._layout
 
         # ── 子面板 ────────────────────────────────────────────────
         self.battle_log = BattleLogPanel(layout["battle_log_rect"])
@@ -334,6 +335,11 @@ class MainWindow:
             # pygame_gui
             self._ui_manager.process_events(event)
 
+            # ── Sprint 3: 文本输入变化 → 实时坐标校验 ────────────
+            if event.type == pygame_gui.UI_TEXT_ENTRY_CHANGED:
+                if event.ui_element in (self.command_panel.entry_x, self.command_panel.entry_y):
+                    self.command_panel.validate_inputs()
+
             # 滚轮 → 战报滚动
             if event.type == pygame.MOUSEWHEEL:
                 if event.x < WINDOW_WIDTH * BATTLE_LOG_WIDTH_RATIO:
@@ -401,11 +407,6 @@ class MainWindow:
         if dx < 0: parts.append("W")
         if dx > 0: parts.append("E")
         return "".join(parts)
-
-            # ── Sprint 3: 文本输入变化 → 实时坐标校验 ────────────
-            if event.type == pygame_gui.UI_TEXT_ENTRY_CHANGED:
-                if event.ui_element in (self.command_panel.entry_x, self.command_panel.entry_y):
-                    self.command_panel.validate_inputs()
 
     # ── 私有方法：更新 ────────────────────────────────────────────
 
