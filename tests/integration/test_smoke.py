@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import pytest
+
 from src.battle.battle_system import BattleSystem
 from src.battle.unit_manager import UnitManager
 from src.battle.units import Infantry

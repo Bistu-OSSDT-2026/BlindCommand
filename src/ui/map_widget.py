@@ -402,7 +402,12 @@ class MapWidget:
 
     def _on_report(self, payload) -> None:
         """POSITION_REPORT 事件：添加汇报圈。"""
-        from src.core.constants import REPORT_CIRCLE_ALPHA, REPORT_CIRCLE_RADIUS, REPORT_CIRCLE_DURATION, Coordinate
+        from src.core.constants import (
+            REPORT_CIRCLE_ALPHA,
+            REPORT_CIRCLE_DURATION,
+            REPORT_CIRCLE_RADIUS,
+            Coordinate,
+        )
         x = getattr(payload, 'reported_x', 0)
         y = getattr(payload, 'reported_y', 0)
         self._report_circles.append({
@@ -537,7 +542,9 @@ class MapWidget:
 
     @staticmethod
     def _load_svg(path: str) -> pygame.Surface:
-        import cairosvg, io
+        import io
+
+        import cairosvg
         out = cairosvg.svg2png(url=path)
         return pygame.image.load(io.BytesIO(out))
 

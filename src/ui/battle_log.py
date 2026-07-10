@@ -7,7 +7,7 @@ BattleLogPanel — RTT 战报面板（原生 pygame 渲染，支持中文）
 from __future__ import annotations
 
 import logging
-from typing import Callable, Any, Optional
+from typing import Any, Callable, Optional
 
 import pygame
 

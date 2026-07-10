@@ -21,9 +21,9 @@ from src.battle.commander import Command, Commander
 from src.battle.unit_manager import UnitManager
 from src.battle.units import Infantry
 from src.core.constants import (
+    COMBAT_ROUT_HP_RATIO,
     COMMAND_DELAY_MAX,
     COMMAND_DELAY_MIN,
-    COMBAT_ROUT_HP_RATIO,
     CommandType,
     Coordinate,
     Faction,

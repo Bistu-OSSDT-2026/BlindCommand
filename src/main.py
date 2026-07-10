@@ -11,11 +11,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from src.core.constants import Faction, GameEventType, GameResult
 from src.core.engine import RealTimeEngine
-from src.core.constants import GameEventType, GameResult, Faction
 from src.core.event_bus import event_bus
-from src.ui.main_window import MainWindow
 from src.ui.level_select import show_level_select
+from src.ui.main_window import MainWindow
 from src.ui.result_screen import show_result
 
 logging.basicConfig(
@@ -46,9 +46,9 @@ def main() -> None:
 
         # 2. 创建引擎
         engine = RealTimeEngine.from_map_file(map_path)
+        from src.battle.ai import EnemyAI
         from src.battle.battle_system import resolve_combat_round
         from src.battle.commander import Commander
-        from src.battle.ai import EnemyAI
         commander = Commander(engine.get_map())
         ai = EnemyAI(engine.get_map(), engine.get_range_query(), commander,
                      difficulty=level["name"])

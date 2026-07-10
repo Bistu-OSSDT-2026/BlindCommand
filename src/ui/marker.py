@@ -24,9 +24,9 @@ from src.core.constants import (
     COLOR_MARKER_FRIENDLY,
     COLOR_MARKER_HQ,
     COLOR_MARKER_NOTE,
+    TILE_SIZE,
     Coordinate,
     MarkerType,
-    TILE_SIZE,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,6 +39,7 @@ def _create_font(size: int) -> pygame.font.Font:
     import os as _os
     import sys as _sys
     from pathlib import Path as _Path
+
     # 1) 系统字体目录
     _fonts_dir = _os.environ.get("WINDIR", "C:/Windows") + "/Fonts"
     for _name in ("msyh.ttc", "msyh.ttf", "simkai.ttf", "simsun.ttc"):

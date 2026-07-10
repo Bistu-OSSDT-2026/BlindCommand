@@ -11,6 +11,7 @@
 
 import math
 import random
+
 import pygame
 
 # ── 配置 ──────────────────────────────────────────────────
@@ -80,6 +81,7 @@ for _ in range(30):               # 多条短线段模拟涂抹
 
 # ── 保存 ──────────────────────────────────────────────────
 import os
+
 os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
 pygame.image.save(surface, OUTPUT_PATH)
 print(f"✅ 汇报圈已生成: {OUTPUT_PATH} ({SIZE}×{SIZE})")
