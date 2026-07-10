@@ -19,10 +19,7 @@ from typing import Optional
 
 import pygame
 
-from src.core.constants import (
-    Coordinate,
-    MarkerType,
-)
+from src.core.constants import Coordinate, MarkerType
 
 logger = logging.getLogger(__name__)
 

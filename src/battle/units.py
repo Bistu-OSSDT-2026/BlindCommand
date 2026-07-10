@@ -23,13 +23,7 @@ from __future__ import annotations
 
 import logging
 
-from src.core.constants import (
-    UNIT_DISPLAY_NAMES,
-    UNIT_STATS,
-    Coordinate,
-    Faction,
-    UnitType,
-)
+from src.core.constants import UNIT_DISPLAY_NAMES, UNIT_STATS, Coordinate, Faction, UnitType
 from src.core.interfaces import IMap, IUnit
 from src.core.unit_base import UnitBase
 

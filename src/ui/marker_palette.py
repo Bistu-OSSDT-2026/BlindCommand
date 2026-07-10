@@ -7,7 +7,6 @@ MarkerPalette — 标记托盘（RTT）
 
 from __future__ import annotations
 
-
 import pygame
 
 from src.core.constants import TILE_SIZE

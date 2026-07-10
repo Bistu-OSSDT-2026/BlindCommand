@@ -5,10 +5,10 @@ CommandPanel — 原生 pygame 浮动单位选择面板（simhei 字体）
 
 from __future__ import annotations
 
+import contextlib
 from typing import Optional
 
 import pygame
-import contextlib
 
 _SHORT_NAMES = {
     "第一步兵连": "1连", "第二步兵连": "2连", "第三步兵连": "3连", "第四步兵连": "4连",
